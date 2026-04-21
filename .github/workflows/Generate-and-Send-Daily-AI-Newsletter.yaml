@@ -29,13 +29,18 @@ jobs:
         # 安装脚本运行所必需的库
         run: |
           python -m pip install --upgrade pip
-          pip install requests openai
+          pip install -r requirements.txt
 
       - name: 4. Generate newsletter content
         # 运行你的 Python 脚本来生成 HTML 文件和主题文件
-        # AZURE_OPENAI_KEY 这个环境变量会从 GitHub Secrets 中读取
         env:
-          AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
-          PRO_MAIL_USERNAME: ${{ secrets.PRO_MAIL_USERNAME }}
-          PRO_MAIL_PASSWORD: ${{ secrets.PRO_MAIL_PASSWORD }}
-        run: python test/PLAYPRO_AI_publisher.py
+          AZURE_OPENAI_TOKEN: ${{ secrets.AZURE_OPENAI_TOKEN }}
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+          RSS_URL: ${{ vars.RSS_URL }}
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SENDER_USERNAME: ${{ vars.SENDER_USERNAME }}
+          SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
+          TO_ADDRS: ${{ vars.TO_ADDRS }}
+          FROM_ALIAS: ${{ vars.FROM_ALIAS }}
+        run: python newsletter_git_action.py
