@@ -1,0 +1,41 @@
+name: PLAYPRO Generate and Send Daily AI Newsletter
+
+on:
+  schedule:
+    # 每天的 UTC 时间上午 8 点运行
+    # Cron 语法: 分 时 日 月 周
+    - cron: '0 8 * * *'
+  
+  # 允许您手动在 Actions 页面点击按钮来测试运行
+  workflow_dispatch:
+
+jobs:
+  build_and_send_job:
+    runs-on: ubuntu-latest
+    name: Build and Send Daily Newsletter
+
+    steps:
+      - name: 1. Checkout repository code
+        # 检出你的代码，这样 Runner 才能访问到 Python 脚本
+        uses: actions/checkout@v4
+
+      - name: 2. Set up Python environment
+        # 设置 Python 3.11 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 3. Install Python dependencies
+        # 安装脚本运行所必需的库
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests openai
+
+      - name: 4. Generate newsletter content
+        # 运行你的 Python 脚本来生成 HTML 文件和主题文件
+        # AZURE_OPENAI_KEY 这个环境变量会从 GitHub Secrets 中读取
+        env:
+          AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
+          PRO_MAIL_USERNAME: ${{ secrets.PRO_MAIL_USERNAME }}
+          PRO_MAIL_PASSWORD: ${{ secrets.PRO_MAIL_PASSWORD }}
+        run: python test/PLAYPRO_AI_publisher.py
