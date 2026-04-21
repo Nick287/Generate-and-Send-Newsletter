@@ -1,4 +1,4 @@
-name: PLAYPRO Generate and Send Daily AI Newsletter
+name: Generate and Send Daily AI Newsletter
 
 on:
   schedule:
