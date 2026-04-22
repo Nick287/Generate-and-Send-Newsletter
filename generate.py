@@ -157,6 +157,9 @@ class AppConfig:
     enrich_fetch_timeout: int
     enrich_max_body_chars: int
     cleanup_retention_days: int
+    llm_fallback_endpoint: str = ""
+    llm_fallback_api_key: str = ""
+    llm_fallback_model: str = ""
 
 
 @dataclass
@@ -420,6 +423,9 @@ def validate_config(doc: Any) -> AppConfig:
     endpoint = llm.get("endpoint", DEFAULT_LLM_ENDPOINT)
     api_key = llm.get("api_key", "") or os.environ.get("LLM_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
     model = llm.get("model", DEFAULT_LLM_MODEL)
+    fallback_endpoint = llm.get("fallback_endpoint", "") or ""
+    fallback_api_key = llm.get("fallback_api_key", "") or ""
+    fallback_model = llm.get("fallback_model", "") or ""
     temperature = llm.get("temperature", 0.2)
     max_tokens = llm.get("max_tokens", 8000)
     timeout = llm.get("timeout", 180)
@@ -487,6 +493,9 @@ def validate_config(doc: Any) -> AppConfig:
         llm_temperature=float(temperature),
         llm_max_tokens=max_tokens,
         llm_timeout=timeout,
+        llm_fallback_endpoint=str(fallback_endpoint).strip(),
+        llm_fallback_api_key=str(fallback_api_key).strip(),
+        llm_fallback_model=str(fallback_model).strip(),
         fetch_window_days=fetch_window_days,
         fetch_max_workers=fetch_max_workers,
         fetch_max_per_feed=fetch_max_per_feed,
@@ -960,40 +969,46 @@ def parse_json_array(content: str) -> list[Any]:
     return json.loads(value[start : end + 1])
 
 
-def llm_chat(
-    config: AppConfig,
-    logger: logging.Logger,
+def _llm_call(
+    endpoint: str,
+    api_key: str,
+    model: str,
     system_prompt: str,
     user_prompt: str,
+    temperature: float,
+    max_tokens: int,
+    timeout: int,
     retries: int,
     delay_seconds: float,
+    logger: logging.Logger,
+    label: str,
 ) -> str:
     payload = {
-        "model": config.llm_model,
+        "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        "temperature": config.llm_temperature,
-        "max_completion_tokens": config.llm_max_tokens,
+        "temperature": temperature,
+        "max_completion_tokens": max_tokens,
     }
     session = requests.Session()
     headers = {"Content-Type": "application/json"}
-    if config.llm_api_key:
+    if api_key:
         # Send both auth styles so the same code works against:
         #  - OpenAI / OpenAI-compatible endpoints (Bearer token)
         #  - Azure APIM in front of AOAI (subscription key header)
         # Each backend ignores the header it doesn't recognise.
-        headers["Authorization"] = "Bearer %s" % config.llm_api_key
-        headers["Ocp-Apim-Subscription-Key"] = config.llm_api_key
+        headers["Authorization"] = "Bearer %s" % api_key
+        headers["Ocp-Apim-Subscription-Key"] = api_key
     try:
         for attempt in range(1, retries + 2):
             try:
                 response = request_with_retry(
                     session=session,
                     method="POST",
-                    url=config.llm_endpoint,
-                    timeout=config.llm_timeout,
+                    url=endpoint,
+                    timeout=timeout,
                     logger=logger,
                     retries=0,
                     delay=0,
@@ -1004,12 +1019,22 @@ def llm_chat(
                 content = data["choices"][0]["message"]["content"]
                 if not isinstance(content, str) or not content.strip():
                     raise ValueError("LLM response content was empty")
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "llm_call_succeeded",
+                    label=label,
+                    model=model,
+                    attempt=attempt,
+                )
                 return content
             except Exception as exc:
                 log_event(
                     logger,
                     logging.WARNING,
                     "llm_call_failed",
+                    label=label,
+                    model=model,
                     attempt=attempt,
                     error=str(exc),
                 )
@@ -1020,6 +1045,59 @@ def llm_chat(
     finally:
         session.close()
     raise RuntimeError("LLM call exited without a response")
+
+
+def llm_chat(
+    config: AppConfig,
+    logger: logging.Logger,
+    system_prompt: str,
+    user_prompt: str,
+    retries: int,
+    delay_seconds: float,
+) -> str:
+    try:
+        return _llm_call(
+            endpoint=config.llm_endpoint,
+            api_key=config.llm_api_key,
+            model=config.llm_model,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=config.llm_temperature,
+            max_tokens=config.llm_max_tokens,
+            timeout=config.llm_timeout,
+            retries=retries,
+            delay_seconds=delay_seconds,
+            logger=logger,
+            label="primary",
+        )
+    except Exception as primary_err:
+        fb_endpoint = getattr(config, "llm_fallback_endpoint", "")
+        fb_key = getattr(config, "llm_fallback_api_key", "")
+        fb_model = getattr(config, "llm_fallback_model", "")
+        if fb_endpoint and fb_key and fb_model:
+            log_event(
+                logger,
+                logging.WARNING,
+                "llm_primary_failed_using_fallback",
+                primary_model=config.llm_model,
+                fallback_model=fb_model,
+                error=str(primary_err),
+            )
+            return _llm_call(
+                endpoint=fb_endpoint,
+                api_key=fb_key,
+                model=fb_model,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=config.llm_temperature,
+                max_tokens=config.llm_max_tokens,
+                timeout=config.llm_timeout,
+                retries=retries,
+                delay_seconds=delay_seconds,
+                logger=logger,
+                label="fallback",
+            )
+        raise
 
 
 def stage_pre_score(
