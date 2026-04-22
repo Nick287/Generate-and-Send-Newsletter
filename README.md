@@ -1,67 +1,207 @@
 # Generate-and-Send-Newsletter
 
-**Auto-fetch AI news → AI summarize & translate → Generate newsletter email → Scheduled delivery**
+**Auto-fetch AI news → AI curation & summarization → Generate newsletter email → Scheduled delivery**
 
 [中文文档](README_CN.md)
 
 ---
 
-## Introduction
+This repo now ships **two pipelines** side-by-side. Pick the one that matches your needs:
 
-A fully automated AI newsletter generation and delivery system. It fetches the latest AI news from an RSS feed, uses Azure OpenAI to summarize and translate the content into Chinese, generates a beautifully styled HTML email, and sends it to subscribers via SMTP. The entire pipeline runs daily via GitHub Actions.
+| Pipeline | Entry point | Source | Best for |
+|---|---|---|---|
+| **Original (Nick's)** | `newsletter_git_action.py` | Single RSS feed → AI summary → SMTP | Simple daily digest from one source, fully driven by env vars / GitHub Actions |
+| **Enhanced v5 (this PR)** | `generate.py` | 40+ curated feeds → 6-stage curation → multi-provider email | Weekly curated digest with full LLM scoring + responsive HTML template |
 
-## Workflow
+Everything from the original setup still works exactly as before. Read on for the enhanced pipeline.
+
+---
+
+## Enhanced Pipeline (v5) — Overview
 
 ```
-RSS Feed → Parse Content → AI Ad Removal → AI Summary → AI Translate → HTML Email → SMTP Send
+┌─────────┐  ┌─────────┐  ┌──────────┐  ┌─────────┐  ┌──────┐  ┌────────┐
+│ Fetch   │→ │ Enrich  │→ │ Curate   │→ │ Compose │→ │ Send │→ │ Report │
+│ 40+ RSS │  │ Full    │  │ LLM      │  │ HTML    │  │ ACS/ │  │ Logs + │
+│ in para │  │ text +  │  │ scoring  │  │ email   │  │ SG/  │  │ TG     │
+│ -llel   │  │ OG img  │  │ + tags   │  │ template│  │ SMTP │  │ notify │
+└─────────┘  └─────────┘  └──────────┘  └─────────┘  └──────┘  └────────┘
 ```
 
-## Project Structure
+### Key features
+
+- **40+ RSS feeds** — Azure, AWS, GCP, NVIDIA, OpenAI / Anthropic / Google labs, AI media, analyst blogs (`feeds.yaml`)
+- **Full-text enrichment** — `trafilatura`-based article extraction + Open Graph image scraping
+- **LLM-powered curation** — DCSA-focused scoring rubric (`prompts/curate-v5.md`); works with any OpenAI-compatible endpoint
+- **Responsive HTML template** — `templates/v7.html`; uses `dir=rtl` sidebar trick so desktop renders the sidebar on the right and mobile collapses it on top
+- **Multi-provider email** — `acs` (Azure Communication Services), `sendgrid`, or `smtp`, picked from `config.yaml`
+- **Production-grade stability** — per-feed error isolation, LLM retry with backoff, image fallbacks (`placehold.co`), idempotent runs
+- **Optional progress notifier** — set `TG_NOTIFY_SCRIPT` to ping Telegram / Slack on milestones
+
+---
+
+## Quick start (enhanced pipeline)
+
+```bash
+# 1. Install deps
+pip install -r requirements.txt
+
+# 2. Copy example config and fill in your keys
+cp config.example.yaml config.yaml
+$EDITOR config.yaml          # set llm.api_key, email.provider, recipients, etc.
+
+# 3. Dry-run to make sure it composes the email without sending
+python3 generate.py --dry-run
+
+# 4. Full run + send
+python3 generate.py
+# or
+./run.sh
+```
+
+`config.yaml` is gitignored — never commit it.
+
+### Useful flags
+
+```bash
+python3 generate.py --dry-run            # build HTML, don't send
+python3 generate.py --fetch-only         # stop after fetch stage (debug feeds)
+python3 generate.py --to a@x.com,b@y.com # override recipients
+```
+
+Outputs:
+- `output/<date>/newsletter.html` — final HTML
+- `data/fetched.json`, `data/curated.json` — pipeline artifacts
+- `data/send-log.json` — delivery audit log
+
+---
+
+## Configuring `config.yaml`
+
+See `config.example.yaml` for the full schema. The most important sections:
+
+### LLM
+
+```yaml
+llm:
+  endpoint: "https://api.openai.com/v1/chat/completions"
+  api_key: "sk-..."        # or set env LLM_API_KEY / OPENAI_API_KEY
+  model: "gpt-4o"
+```
+
+Any OpenAI-compatible Chat Completions endpoint works (OpenAI, Azure OpenAI proxy, vLLM, LiteLLM, Ollama with the OpenAI shim, Claude via `anthropic-openai`, etc.).
+
+### Email — pick a provider
+
+```yaml
+email:
+  provider: "acs"          # acs | sendgrid | smtp
+  recipients:
+    - "team@company.com"
+
+  # ACS
+  acs_sender: "DoNotReply@xxxxx.azurecomm.net"
+  acs_connection_string: "endpoint=https://...;accesskey=..."
+
+  # SendGrid (alternative)
+  # sendgrid_api_key: "SG.xxxx"
+
+  # SMTP (alternative)
+  # smtp_host: "smtp.office365.com"
+  # smtp_port: 587
+  # smtp_user: "you@example.com"
+  # smtp_pass: "..."
+```
+
+You can also pass secrets via env vars instead of `config.yaml`:
+- `ACS_CONNECTION_STRING`
+- `SENDGRID_API_KEY`
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`
+- `LLM_API_KEY` / `OPENAI_API_KEY`
+
+---
+
+## Customizing
+
+| What | Where |
+|---|---|
+| Add / remove RSS feeds | `feeds.yaml` (grouped by category) |
+| Change scoring rubric / categories / tone | `prompts/curate-v5.md` |
+| Change visual layout | `templates/v7.html` (table-based, email-client-safe) |
+| Change LLM model / temperature / max_tokens | `config.yaml` → `llm:` |
+| Change look-back window / feed concurrency | `config.yaml` → `fetch:` |
+
+---
+
+## Scheduling
+
+### cron (server / VM)
+
+```cron
+# Every Monday 09:00 local time
+0 9 * * 1  cd /path/to/Generate-and-Send-Newsletter && ./run.sh >> run.log 2>&1
+```
+
+### GitHub Actions
+
+Nick's existing workflow at `.github/workflows/Generate-and-Send-Daily-AI-Newsletter.yaml` continues to run the **original** pipeline. To schedule the **enhanced** one, add a second workflow that:
+
+1. Writes `config.yaml` from a repo secret (e.g. `NEWSLETTER_CONFIG`)
+2. Runs `python generate.py`
+
+Example fragment:
+
+```yaml
+- name: Materialize config
+  run: 'echo "$NEWSLETTER_CONFIG" > config.yaml'
+  env:
+    NEWSLETTER_CONFIG: ${{ secrets.NEWSLETTER_CONFIG }}
+
+- name: Generate + send
+  run: python generate.py
+```
+
+---
+
+## File layout
 
 ```
-├── newsletter_git_action.py        # Main entry script
-├── requirements.txt                # Python dependencies
-├── function/
-│   ├── AzureAIClient.py            # Azure OpenAI client wrapper
-│   ├── EmailSender.py              # SMTP email sender with retry
-│   └── NewsCollector.py            # News collection, summary & translation
-├── NewsTemplate/
-│   └── AINewsTemplate.py           # HTML newsletter template
-└── .github/workflows/
-    └── PLAYPRO-Generate-and-Send-Daily-AI-Newsletter.yaml  # Scheduled workflow
+.
+├── generate.py                # ★ Enhanced v5 pipeline (this PR)
+├── feeds.yaml                 # ★ 40+ curated feeds
+├── config.example.yaml        # ★ Copy → config.yaml
+├── prompts/
+│   └── curate-v5.md           # ★ DCSA scoring rubric prompt
+├── templates/
+│   └── v7.html                # ★ Responsive email template
+├── run.sh                     # ★ Wrapper (loads .env / venv)
+│
+├── newsletter_git_action.py   # Original pipeline (Nick) — unchanged
+├── function/                  # Original pipeline modules — unchanged
+├── NewsTemplate/              # Original template — unchanged
+└── .github/workflows/         # Original GitHub Actions workflow — unchanged
 ```
 
-## Key Features
+---
 
-- **RSS News Fetching** — Fetch latest AI news from a specified RSS feed
-- **AI Ad Removal** — Intelligently identify and remove promotional content using LLM
-- **AI Summarization** — Compress long articles into concise key points
-- **AI Translation** — Auto-translate to Chinese, preserving Markdown formatting and links
-- **Styled HTML Email** — Dark-themed responsive email template
-- **Auto Retry** — Automatic retry on SMTP send failures
-- **Scheduled via GitHub Actions** — Runs automatically at UTC 8:00 daily
+## Original pipeline
 
-## Quick Start
+The original simple-RSS / SMTP pipeline is fully preserved. Its setup instructions are below for completeness.
 
-### 1. Install Dependencies
+### Quick start (original)
 
 ```bash
 pip install -r requirements.txt
+# Set env vars (see .env example below)
+python newsletter_git_action.py
 ```
 
-### 2. Set Environment Variables
-
-Create a `.env` file for local development:
+### Required env vars (original)
 
 ```env
-# Azure OpenAI
 AZURE_OPENAI_TOKEN=your_azure_openai_api_key
 AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-
-# RSS Feed
 RSS_URL=https://your-rss-feed-url.com/rss.xml
-
-# SMTP Email Configuration
 SMTP_HOST=smtp.example.com
 SMTP_PORT=465
 SENDER_USERNAME=your_email@example.com
@@ -70,38 +210,10 @@ TO_ADDRS=recipient1@example.com,recipient2@example.com
 FROM_ALIAS=AI Newsletter
 ```
 
-### 3. Run Locally
+GitHub Actions workflow: `.github/workflows/Generate-and-Send-Daily-AI-Newsletter.yaml`.
 
-```bash
-python newsletter_git_action.py
-```
-
-## GitHub Actions Deployment
-
-Add the following secrets in your repo's **Settings → Secrets and variables → Actions**:
-
-| Secret | Description |
-|---|---|
-| `AZURE_OPENAI_TOKEN` | Azure OpenAI API key |
-| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL |
-| `RSS_URL` | RSS feed URL |
-| `SMTP_HOST` | SMTP server host |
-| `SMTP_PORT` | SMTP port (e.g. 465) |
-| `SENDER_USERNAME` | Sender email address |
-| `SENDER_PASSWORD` | Sender email password |
-| `TO_ADDRS` | Recipients (comma-separated) |
-| `FROM_ALIAS` | Sender display name |
-
-Once configured, the workflow runs automatically at UTC 8:00 daily. You can also trigger it manually from the Actions tab.
-
-## Tech Stack
-
-- **Python 3.11+**
-- **Azure OpenAI** — GPT for summarization, translation & ad removal
-- **html2text** — HTML to Markdown conversion
-- **markdown** — Markdown to HTML for email rendering
-- **GitHub Actions** — Scheduled automation
+---
 
 ## License
 
-See [LICENSE](LICENSE) for details.
+MIT — see `LICENSE`.
