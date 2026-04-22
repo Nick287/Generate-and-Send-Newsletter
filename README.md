@@ -217,3 +217,28 @@ GitHub Actions workflow: `.github/workflows/Generate-and-Send-Daily-AI-Newslette
 ## License
 
 MIT — see `LICENSE`.
+
+## GitHub Actions Setup
+
+### Required Secrets
+
+Go to repo **Settings → Secrets and variables → Actions → New repository secret** and add:
+
+| Secret | Value | Example |
+|--------|-------|---------|
+| `LLM_ENDPOINT` | Primary LLM API endpoint | `https://your-apim.azure-api.net/grok/chat/completions` |
+| `LLM_API_KEY` | Primary LLM subscription key | APIM subscription key |
+| `LLM_MODEL` | Primary model name | `grok-4-20-reasoning` |
+| `LLM_FALLBACK_ENDPOINT` | Fallback LLM endpoint | `https://your-apim.azure-api.net/openai/deployments/gpt-54/chat/completions?api-version=2024-10-21` |
+| `LLM_FALLBACK_API_KEY` | Fallback subscription key | APIM subscription key |
+| `LLM_FALLBACK_MODEL` | Fallback model name | `gpt-54` |
+| `ACS_CONNECTION_STRING` | Azure Communication Services connection string | `endpoint=https://...;accesskey=...` |
+| `ACS_SENDER` | ACS sender email address | `DoNotReply@xxxxx.azurecomm.net` |
+| `RECIPIENTS` | Recipient email address | `team@company.com` |
+
+### Schedule
+- Runs every **Tuesday at 09:00 HKT** (01:00 UTC)
+- Can also be triggered manually from Actions tab → "Run workflow"
+
+### Artifacts
+Each run saves the generated newsletter HTML as a downloadable artifact (retained 30 days).

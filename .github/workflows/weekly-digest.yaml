@@ -1,0 +1,67 @@
+name: Weekly AI Digest
+
+on:
+  schedule:
+    - cron: '0 1 * * 2'  # Every Tuesday at UTC 01:00 (= HKT 09:00)
+  workflow_dispatch:       # Manual trigger
+
+jobs:
+  generate-and-send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate config
+        run: |
+          cat > config.yaml << 'EOF'
+          llm:
+            endpoint: "${{ secrets.LLM_ENDPOINT }}"
+            api_key: "${{ secrets.LLM_API_KEY }}"
+            model: "${{ secrets.LLM_MODEL }}"
+            fallback_endpoint: "${{ secrets.LLM_FALLBACK_ENDPOINT }}"
+            fallback_api_key: "${{ secrets.LLM_FALLBACK_API_KEY }}"
+            fallback_model: "${{ secrets.LLM_FALLBACK_MODEL }}"
+            temperature: 0.2
+            max_tokens: 8000
+            timeout: 120
+          email:
+            provider: "acs"
+            acs_connection_string: "${{ secrets.ACS_CONNECTION_STRING }}"
+            acs_sender: "${{ secrets.ACS_SENDER }}"
+            recipients:
+              - "${{ secrets.RECIPIENTS }}"
+          newsletter:
+            title: "AI Weekly Digest"
+            subtitle: "Curated by Microsoft Digital CSA Team"
+          fetch:
+            max_workers: 10
+            timeout: 15
+          enrich:
+            top_n: 40
+            fetch_timeout: 15
+            delay_between: 0.5
+            max_body_chars: 3000
+          EOF
+
+      - name: Run pipeline
+        run: python3 generate.py
+
+      - name: Upload newsletter artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: newsletter-${{ github.run_number }}
+          path: output/newsletter-*.html
+          retention-days: 30
