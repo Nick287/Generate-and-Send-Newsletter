@@ -19,6 +19,10 @@ KILL LIST — skip these:
 - Minor SDK patch releases (unless breaking changes)
 - AI doomer/accelerationist opinion pieces
 - Celebrity/influencer AI takes
+- Minor build-number releases (b8873, b8878) without user-facing feature changes
+- Incremental patch releases that only fix bugs or update dependencies
+- Release candidates (RC) and pre-releases unless they introduce major new features
+- Multiple releases from the same project in one week — keep only the most significant
 
 TAG DEFINITIONS:
 - HEADLINE: The most important stories. Must score >=18/25.

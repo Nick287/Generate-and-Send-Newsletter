@@ -52,7 +52,67 @@ BAD_IMAGE_PATTERNS = [
     "1x1",
     "spacer",
     "icon",
+    # GitHub auto-generated OG images (just screenshots of release/repo UI)
+    "opengraph.githubassets.com",
+    "repository-images.githubusercontent.com",
+    "avatars.githubusercontent.com",
 ]
+
+# Match semver-ish release tags: v1.2.3, 0.19.1, v0.21.1-rc1
+SEMVER_PATTERN = re.compile(r"^v?\d+\.\d+(\.\d+)?(-[\w.]+)?$")
+_BUILD_NUMBER_PATTERN = re.compile(r"^b\d+$")
+_HEX_HASH_PATTERN = re.compile(r"^[a-f0-9]{7,}$")
+_PRERELEASE_PATTERN = re.compile(r"(rc\d*|alpha|beta|preview|nightly|dev)", re.IGNORECASE)
+
+
+def is_github_releases_feed(url: str) -> bool:
+    return "github.com" in url and "/releases" in url
+
+
+def is_meaningful_release(title: str) -> bool:
+    """Filter out build-number releases like b8873, b8875 and bare hashes."""
+    first_word = title.strip().split()[0] if title.strip() else ""
+    if not first_word:
+        return False
+    if _BUILD_NUMBER_PATTERN.match(first_word):
+        return False
+    if _HEX_HASH_PATTERN.match(first_word):
+        return False
+    return True
+
+
+def _release_tag_from_link(link: str) -> str:
+    # https://github.com/owner/repo/releases/tag/v1.2.3 -> v1.2.3
+    if "/releases/tag/" in link:
+        return link.rsplit("/releases/tag/", 1)[-1].split("?")[0].split("#")[0]
+    return ""
+
+
+def pick_latest_github_release(articles: list["Article"]) -> list["Article"]:
+    """From a list of GitHub release entries (single repo), keep only the latest
+    meaningful semver release. Prefer non-prerelease; fall back to prerelease only
+    if nothing else exists."""
+    if not articles:
+        return []
+    semver_entries = []
+    prerelease_entries = []
+    other_entries = []
+    for art in articles:
+        tag = _release_tag_from_link(art.link) or art.title.strip().split()[0]
+        if SEMVER_PATTERN.match(tag):
+            if _PRERELEASE_PATTERN.search(tag):
+                prerelease_entries.append(art)
+            else:
+                semver_entries.append(art)
+        else:
+            other_entries.append(art)
+
+    def _sort_key(a: "Article"):
+        return a.published_date or ""
+
+    pool = semver_entries or prerelease_entries or other_entries
+    pool.sort(key=_sort_key, reverse=True)
+    return pool[:1]
 
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 
@@ -746,12 +806,15 @@ def fetch_single_feed(
         entries = list(parsed.entries or [])
         entry_limit = source.max_items or config.fetch_max_per_feed
         entries = entries[:entry_limit]
+        is_gh_releases = is_github_releases_feed(source.url)
 
         articles: list[Article] = []
         for entry in entries:
             title = strip_html(str(entry.get("title", ""))).strip()
             link = str(entry.get("link", "")).strip()
             if not title or not link:
+                continue
+            if is_gh_releases and not is_meaningful_release(title):
                 continue
             published = parse_entry_datetime(entry)
             if published is not None and published < cutoff:
@@ -773,6 +836,8 @@ def fetch_single_feed(
                     image_url=rss_image,
                 )
             )
+        if is_gh_releases:
+            articles = pick_latest_github_release(articles)
         log_event(
             logger,
             logging.INFO,
