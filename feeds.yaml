@@ -27,7 +27,7 @@ competitor_cloud:
 
 labs:
   - name: OpenAI Blog
-    url: https://openai.com/blog/rss.xml
+    url: https://openai.com/news/rss.xml
   - name: Google DeepMind
     url: https://deepmind.google/blog/rss.xml
   - name: Google Research
@@ -54,10 +54,12 @@ media:
     url: https://venturebeat.com/category/ai/feed/
   - name: MarkTechPost
     url: https://www.marktechpost.com/feed/
+  - name: The Decoder
+    url: https://the-decoder.com/feed/
 
 newsletters:
   - name: TLDR AI
-    url: https://tldr.tech/ai/rss
+    url: https://tldr.tech/api/rss/ai
   - name: Import AI
     url: https://jack-clark.net/feed/
   - name: Latent Space
@@ -68,6 +70,10 @@ newsletters:
     url: https://buttondown.com/ainews/rss
   - name: Simon Willison
     url: https://simonwillison.net/atom/everything/
+  - name: Smol AI News
+    url: https://news.smol.ai/rss.xml
+  - name: Interconnects
+    url: https://www.interconnects.ai/feed
 
 analysts:
   - name: Stratechery
