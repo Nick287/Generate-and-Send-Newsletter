@@ -910,12 +910,17 @@ def llm_chat(
             {"role": "user", "content": user_prompt},
         ],
         "temperature": config.llm_temperature,
-        "max_tokens": config.llm_max_tokens,
+        "max_completion_tokens": config.llm_max_tokens,
     }
     session = requests.Session()
     headers = {"Content-Type": "application/json"}
     if config.llm_api_key:
+        # Send both auth styles so the same code works against:
+        #  - OpenAI / OpenAI-compatible endpoints (Bearer token)
+        #  - Azure APIM in front of AOAI (subscription key header)
+        # Each backend ignores the header it doesn't recognise.
         headers["Authorization"] = "Bearer %s" % config.llm_api_key
+        headers["Ocp-Apim-Subscription-Key"] = config.llm_api_key
     try:
         for attempt in range(1, retries + 2):
             try:
