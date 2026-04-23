@@ -2,8 +2,8 @@ name: Weekly AI Digest
 
 on:
   schedule:
-    - cron: '0 1 * * 2'  # Every Tuesday at UTC 01:00 (= HKT 09:00)
-  workflow_dispatch:       # Manual trigger
+    - cron: '0 1 * * 2'
+  workflow_dispatch:
 
 jobs:
   generate-and-send:
@@ -23,39 +23,51 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Generate config
+      - name: Generate config and run pipeline
+        env:
+          LLM_ENDPOINT: ${{ secrets.LLM_ENDPOINT }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_FALLBACK_ENDPOINT: ${{ secrets.LLM_FALLBACK_ENDPOINT }}
+          LLM_FALLBACK_API_KEY: ${{ secrets.LLM_FALLBACK_API_KEY }}
+          LLM_FALLBACK_MODEL: ${{ secrets.LLM_FALLBACK_MODEL }}
+          ACS_CONNECTION_STRING: ${{ secrets.ACS_CONNECTION_STRING }}
+          ACS_SENDER: ${{ secrets.ACS_SENDER }}
+          RECIPIENTS: ${{ secrets.RECIPIENTS }}
         run: |
-          cat > config.yaml << EOF
-          llm:
-            endpoint: "${{ secrets.LLM_ENDPOINT }}"
-            api_key: "${{ secrets.LLM_API_KEY }}"
-            model: "${{ secrets.LLM_MODEL }}"
-            fallback_endpoint: "${{ secrets.LLM_FALLBACK_ENDPOINT }}"
-            fallback_api_key: "${{ secrets.LLM_FALLBACK_API_KEY }}"
-            fallback_model: "${{ secrets.LLM_FALLBACK_MODEL }}"
-            temperature: 0.2
-            max_tokens: 8000
-            timeout: 120
-          email:
-            provider: "acs"
-            acs_connection_string: "${{ secrets.ACS_CONNECTION_STRING }}"
-            acs_sender: "${{ secrets.ACS_SENDER }}"
-            recipients: "${{ secrets.RECIPIENTS }}"
-          newsletter:
-            title: "AI Weekly Digest"
-            subtitle: "Curated by Microsoft Digital CSA Team"
-          fetch:
-            max_workers: 10
-            timeout: 15
-          enrich:
-            top_n: 40
-            fetch_timeout: 15
-            delay_between: 0.5
-            max_body_chars: 3000
-          EOF
-
-      - name: Run pipeline
-        run: python3 generate.py
+          python3 -c "
+          import yaml
+          import os
+          config = {
+            'llm': {
+              'endpoint': os.environ['LLM_ENDPOINT'],
+              'api_key': os.environ['LLM_API_KEY'],
+              'model': os.environ['LLM_MODEL'],
+              'fallback_endpoint': os.environ.get('LLM_FALLBACK_ENDPOINT', ''),
+              'fallback_api_key': os.environ.get('LLM_FALLBACK_API_KEY', ''),
+              'fallback_model': os.environ.get('LLM_FALLBACK_MODEL', ''),
+              'temperature': 0.2,
+              'max_tokens': 8000,
+              'timeout': 120,
+            },
+            'email': {
+              'provider': 'acs',
+              'acs_connection_string': os.environ['ACS_CONNECTION_STRING'],
+              'acs_sender': os.environ['ACS_SENDER'],
+              'recipients': os.environ['RECIPIENTS'],
+            },
+            'newsletter': {
+              'title': 'AI Weekly Digest',
+              'subtitle': 'Curated by Microsoft Digital CSA Team',
+            },
+            'fetch': {'max_workers': 10, 'timeout': 15},
+            'enrich': {'top_n': 40, 'fetch_timeout': 15, 'delay_between': 0.5, 'max_body_chars': 3000},
+          }
+          with open('config.yaml', 'w') as f:
+            yaml.dump(config, f, default_flow_style=False)
+          print('config.yaml generated')
+          "
+          python3 generate.py
 
       - name: Upload newsletter artifact
         if: always()
