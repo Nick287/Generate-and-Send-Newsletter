@@ -38,6 +38,14 @@ labs:
     url: https://news.google.com/rss/search?q=%22Anthropic%22+OR+%22Claude%22+when:7d&hl=en-US&gl=US&ceid=US:en
   - name: Meta AI (Google News)
     url: https://news.google.com/rss/search?q=%22Meta+AI%22+OR+Llama+when:7d&hl=en-US&gl=US&ceid=US:en
+  - name: xAI / Grok (Google News)
+    url: https://news.google.com/rss/search?q=%22xAI%22+OR+%22Grok%22+AI+when:7d&hl=en-US&gl=US&ceid=US:en
+  - name: Mistral AI (Google News)
+    url: https://news.google.com/rss/search?q=%22Mistral+AI%22+when:7d&hl=en-US&gl=US&ceid=US:en
+  - name: DeepSeek (Google News)
+    url: https://news.google.com/rss/search?q=%22DeepSeek%22+AI+when:7d&hl=en-US&gl=US&ceid=US:en
+  - name: Qwen / Alibaba AI (Google News)
+    url: https://news.google.com/rss/search?q=%22Qwen%22+OR+%22Tongyi%22+AI+when:7d&hl=en-US&gl=US&ceid=US:en
 
 media:
   - name: TechCrunch AI
