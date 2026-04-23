@@ -9,6 +9,7 @@ jobs:
   generate-and-send:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment: LLM_ENDPOINT
 
     steps:
       - name: Checkout
