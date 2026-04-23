@@ -25,7 +25,7 @@ jobs:
 
       - name: Generate config
         run: |
-          cat > config.yaml << 'EOF'
+          cat > config.yaml << EOF
           llm:
             endpoint: "${{ secrets.LLM_ENDPOINT }}"
             api_key: "${{ secrets.LLM_API_KEY }}"
