@@ -401,6 +401,9 @@ def validate_config(doc: Any) -> AppConfig:
 
     if not isinstance(issue_number, int) or issue_number < 1:
         raise ValueError("config.yaml issue_number must be a positive integer")
+    # Support comma-separated string (e.g. from env vars / GitHub Secrets)
+    if isinstance(recipients, str):
+        recipients = [r.strip() for r in recipients.split(",") if r.strip()]
     if (
         not isinstance(recipients, list)
         or not recipients
