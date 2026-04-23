@@ -56,6 +56,11 @@ BAD_IMAGE_PATTERNS = [
     "opengraph.githubassets.com",
     "repository-images.githubusercontent.com",
     "avatars.githubusercontent.com",
+    # Google News bridge returns Google's own logo, not the article image
+    "news.google.com",
+    "lh3.googleusercontent.com/J-Lz",
+    "encrypted-tbn",
+    "google.com/images",
 ]
 
 # Match semver-ish release tags: v1.2.3, 0.19.1, v0.21.1-rc1
@@ -1216,12 +1221,23 @@ def enrich_article(
     logger: logging.Logger,
 ) -> Article:
     enriched = Article(**asdict(article))
+    # Resolve Google News redirect URLs to actual article URLs
+    fetch_url = article.link
+    if "news.google.com" in fetch_url:
+        try:
+            head_resp = session.head(fetch_url, timeout=10, allow_redirects=True,
+                                     headers={"User-Agent": "AI-Weekly-Digest/5.0"})
+            if head_resp.url and "news.google.com" not in head_resp.url:
+                fetch_url = head_resp.url
+                enriched.link = fetch_url
+        except Exception:
+            pass
     fallback = truncate_text(article.raw_summary, config.enrich_max_body_chars)
     try:
         response = request_with_retry(
             session=session,
             method="GET",
-            url=article.link,
+            url=fetch_url,
             timeout=config.enrich_fetch_timeout,
             logger=logger,
             retries=1,
