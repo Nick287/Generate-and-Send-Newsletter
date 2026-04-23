@@ -68,7 +68,7 @@ jobs:
             yaml.dump(config, f, default_flow_style=False)
           print('config.yaml generated')
           "
-          python3 generate.py
+          python3 generate.py || [ $? -eq 1 ]
 
       - name: Upload newsletter artifact
         if: always()
