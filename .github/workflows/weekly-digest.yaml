@@ -40,7 +40,7 @@ jobs:
             provider: "acs"
             acs_connection_string: "${{ secrets.ACS_CONNECTION_STRING }}"
             acs_sender: "${{ secrets.ACS_SENDER }}"
-            recipients: ${{ secrets.RECIPIENTS }}
+            recipients: "${{ secrets.RECIPIENTS }}"
           newsletter:
             title: "AI Weekly Digest"
             subtitle: "Curated by Microsoft Digital CSA Team"
