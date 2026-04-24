@@ -12,6 +12,7 @@ import html
 import importlib
 import json
 import logging
+import math
 import os
 import re
 import string
@@ -34,15 +35,13 @@ FEEDS_FILE = ROOT / "feeds.yaml"
 CONFIG_FILE = ROOT / "config.yaml"
 TEMPLATES_DIR = ROOT / "templates"
 CURATE_PROMPT_FILE = PROMPTS_DIR / "curate-v5.md"
-TMP_HTML_FILE = Path(os.environ.get("NEWSLETTER_TMP_HTML", "/tmp/ai-newsletter.html"))
-ACS_SECRET_FILE = (
-    Path(os.environ.get("ACS_SECRET_FILE", ""))
-    if os.environ.get("ACS_SECRET_FILE")
-    else None
+TMP_HTML_FILE = Path("/tmp/openclaw/ai-newsletter-v7.html")
+ACS_SECRET_FILE = Path(
+    os.environ.get("ACS_SECRET_FILE", "")
 )
-DEFAULT_LLM_ENDPOINT = "https://api.openai.com/v1/chat/completions"
-DEFAULT_LLM_MODEL = "gpt-4o"
-DEFAULT_ACS_SENDER = ""
+DEFAULT_LLM_ENDPOINT = "http://localhost:18600/v1/chat/completions"
+DEFAULT_LLM_MODEL = "claude-opus-4.6"
+DEFAULT_ACS_SENDER = "DoNotReply@ab0b5b73-4afe-49c7-8e5b-8a84b5dc2e3f.azurecomm.net"
 
 BAD_IMAGE_PATTERNS = [
     "arxiv.org/icons",
@@ -56,75 +55,7 @@ BAD_IMAGE_PATTERNS = [
     "1x1",
     "spacer",
     "icon",
-    # GitHub auto-generated OG images (just screenshots of release/repo UI)
-    "opengraph.githubassets.com",
-    "repository-images.githubusercontent.com",
-    "avatars.githubusercontent.com",
-    # Google News bridge returns Google's own logo, not the article image
-    "news.google.com",
-    "lh3.googleusercontent.com/J-Lz",
-    "encrypted-tbn",
-    "google.com/images",
 ]
-
-# Match semver-ish release tags: v1.2.3, 0.19.1, v0.21.1-rc1
-SEMVER_PATTERN = re.compile(r"^v?\d+\.\d+(\.\d+)?(-[\w.]+)?$")
-_BUILD_NUMBER_PATTERN = re.compile(r"^b\d+$")
-_HEX_HASH_PATTERN = re.compile(r"^[a-f0-9]{7,}$")
-_PRERELEASE_PATTERN = re.compile(
-    r"(rc\d*|alpha|beta|preview|nightly|dev)", re.IGNORECASE
-)
-
-
-def is_github_releases_feed(url: str) -> bool:
-    return "github.com" in url and "/releases" in url
-
-
-def is_meaningful_release(title: str) -> bool:
-    """Filter out build-number releases like b8873, b8875 and bare hashes."""
-    first_word = title.strip().split()[0] if title.strip() else ""
-    if not first_word:
-        return False
-    if _BUILD_NUMBER_PATTERN.match(first_word):
-        return False
-    if _HEX_HASH_PATTERN.match(first_word):
-        return False
-    return True
-
-
-def _release_tag_from_link(link: str) -> str:
-    # https://github.com/owner/repo/releases/tag/v1.2.3 -> v1.2.3
-    if "/releases/tag/" in link:
-        return link.rsplit("/releases/tag/", 1)[-1].split("?")[0].split("#")[0]
-    return ""
-
-
-def pick_latest_github_release(articles: list["Article"]) -> list["Article"]:
-    """From a list of GitHub release entries (single repo), keep only the latest
-    meaningful semver release. Prefer non-prerelease; fall back to prerelease only
-    if nothing else exists."""
-    if not articles:
-        return []
-    semver_entries = []
-    prerelease_entries = []
-    other_entries = []
-    for art in articles:
-        tag = _release_tag_from_link(art.link) or art.title.strip().split()[0]
-        if SEMVER_PATTERN.match(tag):
-            if _PRERELEASE_PATTERN.search(tag):
-                prerelease_entries.append(art)
-            else:
-                semver_entries.append(art)
-        else:
-            other_entries.append(art)
-
-    def _sort_key(a: "Article"):
-        return a.published_date or ""
-
-    pool = semver_entries or prerelease_entries or other_entries
-    pool.sort(key=_sort_key, reverse=True)
-    return pool[:1]
-
 
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 
@@ -157,20 +88,13 @@ class AppConfig:
     issue_number: int
     recipients: list[str]
     acs_sender: str
-    acs_connection_string: str
-    email_provider: str
-    sendgrid_api_key: str
-    smtp_host: str
-    smtp_port: int
-    smtp_user: str
-    smtp_pass: str
-    smtp_use_ssl: bool
     llm_endpoint: str
-    llm_api_key: str
     llm_model: str
     llm_temperature: float
     llm_max_tokens: int
     llm_timeout: int
+    primary_llm: Optional[LLMConfig]
+    fallback_llm: Optional[LLMConfig]
     fetch_window_days: int
     fetch_max_workers: int
     fetch_max_per_feed: int
@@ -181,11 +105,6 @@ class AppConfig:
     enrich_fetch_timeout: int
     enrich_max_body_chars: int
     cleanup_retention_days: int
-    primary_llm: Optional[LLMConfig] = None
-    fallback_llm: Optional[LLMConfig] = None
-    llm_fallback_endpoint: str = ""
-    llm_fallback_api_key: str = ""
-    llm_fallback_model: str = ""
 
 
 @dataclass
@@ -244,11 +163,7 @@ def email_client_class() -> Any:
 
 
 def tg(msg: str) -> None:
-    """Optional progress notifier. Set TG_NOTIFY_SCRIPT env var to a script that takes one arg."""
-    script_path = os.environ.get("TG_NOTIFY_SCRIPT", "")
-    if not script_path:
-        return
-    script = Path(script_path)
+    script = Path(os.environ.get("TG_NOTIFY_SCRIPT", "scripts/tg-notify.sh"))
     if not script.exists():
         return
     try:
@@ -432,7 +347,7 @@ def validate_feeds(doc: Any) -> list[FeedSource]:
 def _parse_llm_section(section: dict[str, Any], label: str) -> LLMConfig:
     ep = section.get("endpoint", "")
     mdl = section.get("model", "")
-    sub_key = section.get("subscription_key", "") or section.get("api_key", "")
+    sub_key = section.get("subscription_key", "")
     temp = section.get("temperature", 0.2)
     mt = section.get("max_tokens", 8000)
     to = section.get("timeout", 180)
@@ -460,20 +375,9 @@ def validate_config(doc: Any) -> AppConfig:
     if not isinstance(doc, dict):
         raise ValueError("config.yaml must be a mapping")
 
-    issue_number = doc.get("issue_number", 1)
-    # Support new nested 'email:' block (preferred) or legacy flat keys
-    email_cfg = doc.get("email", {}) if isinstance(doc.get("email"), dict) else {}
-    recipients = email_cfg.get("recipients", doc.get("recipients"))
-    acs_sender = email_cfg.get("acs_sender", doc.get("acs_sender", DEFAULT_ACS_SENDER))
-    acs_connection_string = email_cfg.get("acs_connection_string", "") or ""
-    email_provider = (email_cfg.get("provider") or "acs").lower().strip()
-    sendgrid_api_key = email_cfg.get("sendgrid_api_key", "") or ""
-    smtp_host = email_cfg.get("smtp_host", "") or ""
-    smtp_port = int(email_cfg.get("smtp_port", 587) or 587)
-    smtp_user = email_cfg.get("smtp_user", "") or ""
-    smtp_pass = email_cfg.get("smtp_pass", "") or ""
-    smtp_use_ssl = bool(email_cfg.get("smtp_use_ssl", False))
-
+    issue_number = doc.get("issue_number")
+    recipients = doc.get("recipients")
+    acs_sender = doc.get("acs_sender", DEFAULT_ACS_SENDER)
     llm = doc.get("llm", {})
     fetch = doc.get("fetch", {})
     enrich = doc.get("enrich", {})
@@ -481,21 +385,14 @@ def validate_config(doc: Any) -> AppConfig:
 
     if not isinstance(issue_number, int) or issue_number < 1:
         raise ValueError("config.yaml issue_number must be a positive integer")
-    # Support comma-separated string (e.g. from env vars / GitHub Secrets)
-    if isinstance(recipients, str):
-        recipients = [r.strip() for r in recipients.split(",") if r.strip()]
     if (
         not isinstance(recipients, list)
         or not recipients
         or not all(isinstance(item, str) and item.strip() for item in recipients)
     ):
-        raise ValueError(
-            "config recipients must be a non-empty list of strings (under email.recipients or top-level)"
-        )
-    if not isinstance(acs_sender, str):
-        acs_sender = ""
-    if email_provider == "acs" and not acs_sender.strip():
-        raise ValueError("config.yaml email.acs_sender required when provider=acs")
+        raise ValueError("config.yaml recipients must be a non-empty list of strings")
+    if not isinstance(acs_sender, str) or not acs_sender.strip():
+        raise ValueError("config.yaml acs_sender must be a non-empty string")
     if not isinstance(llm, dict):
         raise ValueError("config.yaml llm must be a mapping")
     if not isinstance(fetch, dict):
@@ -505,19 +402,26 @@ def validate_config(doc: Any) -> AppConfig:
     if not isinstance(cleanup, dict):
         raise ValueError("config.yaml cleanup must be a mapping")
 
-    endpoint = llm.get("endpoint", DEFAULT_LLM_ENDPOINT)
-    api_key = (
-        llm.get("api_key", "")
-        or os.environ.get("LLM_API_KEY", "")
-        or os.environ.get("OPENAI_API_KEY", "")
-    )
-    model = llm.get("model", DEFAULT_LLM_MODEL)
-    fallback_endpoint = llm.get("fallback_endpoint", "") or ""
-    fallback_api_key = llm.get("fallback_api_key", "") or ""
-    fallback_model = llm.get("fallback_model", "") or ""
-    temperature = llm.get("temperature", 0.2)
-    max_tokens = llm.get("max_tokens", 8000)
-    timeout = llm.get("timeout", 180)
+    primary_llm: Optional[LLMConfig] = None
+    fallback_llm: Optional[LLMConfig] = None
+
+    if isinstance(llm.get("primary"), dict):
+        primary_llm = _parse_llm_section(llm["primary"], "llm.primary")
+        fb = llm.get("fallback")
+        if isinstance(fb, dict):
+            fallback_llm = _parse_llm_section(fb, "llm.fallback")
+        endpoint = llm.get("legacy_endpoint", DEFAULT_LLM_ENDPOINT)
+        model = llm.get("legacy_model", DEFAULT_LLM_MODEL)
+        temperature = primary_llm.temperature
+        max_tokens = primary_llm.max_tokens
+        timeout = primary_llm.timeout
+    else:
+        endpoint = llm.get("endpoint", DEFAULT_LLM_ENDPOINT)
+        model = llm.get("model", DEFAULT_LLM_MODEL)
+        temperature = llm.get("temperature", 0.2)
+        max_tokens = llm.get("max_tokens", 8000)
+        timeout = llm.get("timeout", 180)
+
     fetch_window_days = fetch.get("window_days", 7)
     fetch_max_workers = fetch.get("max_workers", 10)
     fetch_max_per_feed = fetch.get("max_per_feed", 25)
@@ -564,68 +468,17 @@ def validate_config(doc: Any) -> AppConfig:
     if not isinstance(retention_days, int) or retention_days < 1:
         raise ValueError("config.yaml cleanup.retention_days must be >= 1")
 
-    # Build LLMConfig objects for dual-model support
-    primary_llm: Optional[LLMConfig] = None
-    fallback_llm: Optional[LLMConfig] = None
-
-    if isinstance(llm.get("primary"), dict):
-        # Nested YAML config: llm.primary / llm.fallback sections
-        primary_llm = _parse_llm_section(llm["primary"], "llm.primary")
-        fb = llm.get("fallback")
-        if isinstance(fb, dict):
-            fallback_llm = _parse_llm_section(fb, "llm.fallback")
-    else:
-        # Auto-build from env vars if available (GitHub Actions pattern)
-        env_ep = os.environ.get("LLM_ENDPOINT", "")
-        env_key = os.environ.get("LLM_API_KEY", "") or os.environ.get(
-            "OPENAI_API_KEY", ""
-        )
-        env_model = os.environ.get("LLM_MODEL", "")
-        if env_ep and env_model:
-            primary_llm = LLMConfig(
-                endpoint=env_ep,
-                model=env_model,
-                subscription_key=env_key,
-                temperature=float(temperature),
-                max_tokens=max_tokens,
-                timeout=timeout,
-            )
-        env_fb_ep = os.environ.get("LLM_FALLBACK_ENDPOINT", "")
-        env_fb_key = os.environ.get("LLM_FALLBACK_API_KEY", "")
-        env_fb_model = os.environ.get("LLM_FALLBACK_MODEL", "")
-        if env_fb_ep and env_fb_model:
-            fallback_llm = LLMConfig(
-                endpoint=env_fb_ep,
-                model=env_fb_model,
-                subscription_key=env_fb_key,
-                temperature=float(temperature),
-                max_tokens=max_tokens,
-                timeout=timeout,
-            )
-
     return AppConfig(
         issue_number=issue_number,
         recipients=[item.strip() for item in recipients],
         acs_sender=acs_sender.strip(),
-        acs_connection_string=acs_connection_string.strip(),
-        email_provider=email_provider,
-        sendgrid_api_key=sendgrid_api_key.strip(),
-        smtp_host=smtp_host.strip(),
-        smtp_port=smtp_port,
-        smtp_user=smtp_user.strip(),
-        smtp_pass=smtp_pass,
-        smtp_use_ssl=smtp_use_ssl,
         llm_endpoint=endpoint.strip(),
-        llm_api_key=(api_key or "").strip(),
         llm_model=model.strip(),
         llm_temperature=float(temperature),
         llm_max_tokens=max_tokens,
         llm_timeout=timeout,
         primary_llm=primary_llm,
         fallback_llm=fallback_llm,
-        llm_fallback_endpoint=str(fallback_endpoint).strip(),
-        llm_fallback_api_key=str(fallback_api_key).strip(),
-        llm_fallback_model=str(fallback_model).strip(),
         fetch_window_days=fetch_window_days,
         fetch_max_workers=fetch_max_workers,
         fetch_max_per_feed=fetch_max_per_feed,
@@ -704,13 +557,29 @@ def article_datetime(article: Article) -> Optional[dt.datetime]:
         return None
 
 
-def article_sort_key(article: Article) -> tuple[int, float, float, int, str]:
+def article_weighted_score(article: Article) -> float:
+    """Compute weighted score: pre_score dominant (85%) + recency bonus (15%).
+
+    Uses exponential decay with 72-hour half-life. For a weekly newsletter,
+    pre_score (importance) must dominate over recency.
+    """
+    score = article.pre_score if article.pre_score is not None else 4.0
     published = article_datetime(article)
-    has_date = 0 if published is not None else 1
-    timestamp = -published.timestamp() if published is not None else float("inf")
-    pre_score = -(article.pre_score if article.pre_score is not None else -1.0)
-    summary_length = -len(article.raw_summary or "")
-    return (has_date, timestamp, pre_score, summary_length, article.title.lower())
+    if published is None:
+        return score * 0.85
+    now = dt.datetime.now(dt.timezone.utc)
+    hours_old = max(0.0, (now - published).total_seconds() / 3600.0)
+    decay = math.exp(-0.693 * hours_old / 72.0)
+    return score * (0.85 + 0.15 * decay)
+
+
+def article_sort_key(article: Article) -> tuple[float, int, str]:
+    """Sort by weighted score (descending), then summary length, then title."""
+    return (
+        -article_weighted_score(article),
+        -len(article.raw_summary or ""),
+        article.title.lower(),
+    )
 
 
 def normalize_title(title: str) -> str:
@@ -945,15 +814,12 @@ def fetch_single_feed(
         entries = list(parsed.entries or [])
         entry_limit = source.max_items or config.fetch_max_per_feed
         entries = entries[:entry_limit]
-        is_gh_releases = is_github_releases_feed(source.url)
 
         articles: list[Article] = []
         for entry in entries:
             title = strip_html(str(entry.get("title", ""))).strip()
             link = str(entry.get("link", "")).strip()
             if not title or not link:
-                continue
-            if is_gh_releases and not is_meaningful_release(title):
                 continue
             published = parse_entry_datetime(entry)
             if published is not None and published < cutoff:
@@ -975,8 +841,6 @@ def fetch_single_feed(
                     image_url=rss_image,
                 )
             )
-        if is_gh_releases:
-            articles = pick_latest_github_release(articles)
         log_event(
             logger,
             logging.INFO,
@@ -1255,46 +1119,51 @@ def parse_json_array(content: str) -> list[Any]:
     return json.loads(value[start : end + 1])
 
 
-def _llm_call(
-    endpoint: str,
-    api_key: str,
-    model: str,
+def llm_chat(
+    config: AppConfig,
+    logger: logging.Logger,
     system_prompt: str,
     user_prompt: str,
-    temperature: float,
-    max_tokens: int,
-    timeout: int,
     retries: int,
     delay_seconds: float,
-    logger: logging.Logger,
-    label: str,
+    llm_override: Optional[LLMConfig] = None,
 ) -> str:
+    if llm_override:
+        use_endpoint = llm_override.endpoint
+        use_model = llm_override.model
+        use_temperature = llm_override.temperature
+        use_max_tokens = llm_override.max_tokens
+        use_timeout = llm_override.timeout
+        subscription_key = llm_override.subscription_key
+    else:
+        use_endpoint = config.llm_endpoint
+        use_model = config.llm_model
+        use_temperature = config.llm_temperature
+        use_max_tokens = config.llm_max_tokens
+        use_timeout = config.llm_timeout
+        subscription_key = ""
+
     payload = {
-        "model": model,
+        "model": use_model,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        "temperature": temperature,
-        "max_completion_tokens": max_tokens,
+        "temperature": use_temperature,
+        "max_tokens": use_max_tokens,
     }
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if subscription_key:
+        headers["Ocp-Apim-Subscription-Key"] = subscription_key
     session = requests.Session()
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        # Send both auth styles so the same code works against:
-        #  - OpenAI / OpenAI-compatible endpoints (Bearer token)
-        #  - Azure APIM in front of AOAI (subscription key header)
-        # Each backend ignores the header it doesn't recognise.
-        headers["Authorization"] = "Bearer %s" % api_key
-        headers["Ocp-Apim-Subscription-Key"] = api_key
     try:
         for attempt in range(1, retries + 2):
             try:
                 response = request_with_retry(
                     session=session,
                     method="POST",
-                    url=endpoint,
-                    timeout=timeout,
+                    url=use_endpoint,
+                    timeout=use_timeout,
                     logger=logger,
                     retries=0,
                     delay=0,
@@ -1305,22 +1174,12 @@ def _llm_call(
                 content = data["choices"][0]["message"]["content"]
                 if not isinstance(content, str) or not content.strip():
                     raise ValueError("LLM response content was empty")
-                log_event(
-                    logger,
-                    logging.INFO,
-                    "llm_call_succeeded",
-                    label=label,
-                    model=model,
-                    attempt=attempt,
-                )
                 return content
             except Exception as exc:
                 log_event(
                     logger,
                     logging.WARNING,
                     "llm_call_failed",
-                    label=label,
-                    model=model,
                     attempt=attempt,
                     error=str(exc),
                 )
@@ -1331,59 +1190,6 @@ def _llm_call(
     finally:
         session.close()
     raise RuntimeError("LLM call exited without a response")
-
-
-def llm_chat(
-    config: AppConfig,
-    logger: logging.Logger,
-    system_prompt: str,
-    user_prompt: str,
-    retries: int,
-    delay_seconds: float,
-) -> str:
-    try:
-        return _llm_call(
-            endpoint=config.llm_endpoint,
-            api_key=config.llm_api_key,
-            model=config.llm_model,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            temperature=config.llm_temperature,
-            max_tokens=config.llm_max_tokens,
-            timeout=config.llm_timeout,
-            retries=retries,
-            delay_seconds=delay_seconds,
-            logger=logger,
-            label="primary",
-        )
-    except Exception as primary_err:
-        fb_endpoint = getattr(config, "llm_fallback_endpoint", "")
-        fb_key = getattr(config, "llm_fallback_api_key", "")
-        fb_model = getattr(config, "llm_fallback_model", "")
-        if fb_endpoint and fb_key and fb_model:
-            log_event(
-                logger,
-                logging.WARNING,
-                "llm_primary_failed_using_fallback",
-                primary_model=config.llm_model,
-                fallback_model=fb_model,
-                error=str(primary_err),
-            )
-            return _llm_call(
-                endpoint=fb_endpoint,
-                api_key=fb_key,
-                model=fb_model,
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                temperature=config.llm_temperature,
-                max_tokens=config.llm_max_tokens,
-                timeout=config.llm_timeout,
-                retries=retries,
-                delay_seconds=delay_seconds,
-                logger=logger,
-                label="fallback",
-            )
-        raise
 
 
 def llm_chat_with_fallback(
@@ -1410,36 +1216,15 @@ def llm_chat_with_fallback(
     last_error: Optional[Exception] = None
     for label, override in models_to_try:
         try:
-            if override:
-                content = _llm_call(
-                    endpoint=override.endpoint,
-                    api_key=override.subscription_key,
-                    model=override.model,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    temperature=override.temperature,
-                    max_tokens=override.max_tokens,
-                    timeout=override.timeout,
-                    retries=retries,
-                    delay_seconds=delay_seconds,
-                    logger=logger,
-                    label=label,
-                )
-            else:
-                content = _llm_call(
-                    endpoint=config.llm_endpoint,
-                    api_key=config.llm_api_key,
-                    model=config.llm_model,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    temperature=config.llm_temperature,
-                    max_tokens=config.llm_max_tokens,
-                    timeout=config.llm_timeout,
-                    retries=retries,
-                    delay_seconds=delay_seconds,
-                    logger=logger,
-                    label=label,
-                )
+            content = llm_chat(
+                config,
+                logger,
+                system_prompt,
+                user_prompt,
+                retries,
+                delay_seconds,
+                llm_override=override,
+            )
             log_event(
                 logger,
                 logging.INFO,
@@ -1578,27 +1363,12 @@ def enrich_article(
     logger: logging.Logger,
 ) -> Article:
     enriched = Article(**asdict(article))
-    # Resolve Google News redirect URLs to actual article URLs
-    fetch_url = article.link
-    if "news.google.com" in fetch_url:
-        try:
-            head_resp = session.head(
-                fetch_url,
-                timeout=10,
-                allow_redirects=True,
-                headers={"User-Agent": "AI-Weekly-Digest/5.0"},
-            )
-            if head_resp.url and "news.google.com" not in head_resp.url:
-                fetch_url = head_resp.url
-                enriched.link = fetch_url
-        except Exception:
-            pass
     fallback = truncate_text(article.raw_summary, config.enrich_max_body_chars)
     try:
         response = request_with_retry(
             session=session,
             method="GET",
-            url=fetch_url,
+            url=article.link,
             timeout=config.enrich_fetch_timeout,
             logger=logger,
             retries=1,
@@ -1638,10 +1408,64 @@ def enrich_article(
         return enriched
 
 
+def find_trending_topics(
+    articles: list[Article], threshold: float = 0.35, min_cluster: int = 3
+) -> set[int]:
+    """Find articles in trending topic clusters (>=min_cluster distinct sources).
+
+    Uses title token overlap (Jaccard). Returns indices of articles to boost.
+    """
+    n = len(articles)
+    clusters: list[list[int]] = []
+
+    for i in range(n):
+        matched_cluster = None
+        title_i = set(articles[i].title.lower().split())
+        for ci, cluster in enumerate(clusters):
+            for j in cluster:
+                title_j = set(articles[j].title.lower().split())
+                union = title_i | title_j
+                if not union:
+                    continue
+                overlap = len(title_i & title_j) / len(union)
+                if overlap > threshold:
+                    matched_cluster = ci
+                    break
+            if matched_cluster is not None:
+                break
+        if matched_cluster is not None:
+            clusters[matched_cluster].append(i)
+        else:
+            clusters.append([i])
+
+    trending_indices: set[int] = set()
+    for cluster in clusters:
+        sources = {articles[i].source_name for i in cluster}
+        if len(sources) >= min_cluster:
+            trending_indices.update(cluster)
+
+    return trending_indices
+
+
 def stage_enrich(
     articles: list[Article], config: AppConfig, date_label: str, logger: logging.Logger
 ) -> list[Article]:
     pre_scored = stage_pre_score(articles, config, logger)
+
+    trending = find_trending_topics(pre_scored)
+    for idx in trending:
+        current_score = pre_scored[idx].pre_score
+        orig = current_score if current_score is not None else 4.0
+        pre_scored[idx].pre_score = min(10.0, orig * 1.5)
+    if trending:
+        pre_scored.sort(key=article_sort_key)
+        log_event(
+            logger,
+            logging.INFO,
+            "trending_boost",
+            boosted_count=len(trending),
+        )
+
     candidates = pre_scored[: config.enrich_top_candidates]
     enriched: list[Article] = []
     session = requests.Session()
@@ -2055,13 +1879,11 @@ def write_html_outputs(date_label: str, html_body: str, logger: logging.Logger) 
     )
 
 
-def read_acs_connection_string(config: "AppConfig" = None) -> Optional[str]:
+def read_acs_connection_string() -> Optional[str]:
     value = os.environ.get("ACS_CONNECTION_STRING")
     if value and value.strip():
         return value.strip()
-    if config is not None and getattr(config, "acs_connection_string", ""):
-        return config.acs_connection_string
-    if ACS_SECRET_FILE is not None and ACS_SECRET_FILE.exists():
+    if ACS_SECRET_FILE.exists():
         try:
             content = ACS_SECRET_FILE.read_text(encoding="utf-8").strip()
             return content or None
@@ -2118,67 +1940,6 @@ def append_send_log(entry: dict[str, Any], logger: logging.Logger) -> None:
     )
 
 
-def send_via_sendgrid(
-    api_key: str,
-    sender: str,
-    recipients: list[str],
-    subject: str,
-    html_body: str,
-) -> dict[str, Any]:
-    payload = {
-        "personalizations": [{"to": [{"email": r} for r in recipients]}],
-        "from": {"email": sender},
-        "subject": subject,
-        "content": [{"type": "text/html", "value": html_body}],
-    }
-    resp = requests.post(
-        "https://api.sendgrid.com/v3/mail/send",
-        json=payload,
-        headers={
-            "Authorization": "Bearer %s" % api_key,
-            "Content-Type": "application/json",
-        },
-        timeout=60,
-    )
-    if resp.status_code in (200, 202):
-        return {"status": "succeeded", "id": resp.headers.get("X-Message-Id")}
-    return {"status": "failed", "detail": resp.text[:300]}
-
-
-def send_via_smtp(
-    host: str,
-    port: int,
-    user: str,
-    password: str,
-    use_ssl: bool,
-    sender: str,
-    recipients: list[str],
-    subject: str,
-    html_body: str,
-) -> dict[str, Any]:
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = sender
-    msg["To"] = ", ".join(recipients)
-    msg.attach(MIMEText("AI Weekly Digest HTML email", "plain"))
-    msg.attach(MIMEText(html_body, "html"))
-    smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
-    with smtp_cls(host, port, timeout=60) as smtp:
-        if not use_ssl:
-            try:
-                smtp.starttls()
-            except Exception:
-                pass
-        if user:
-            smtp.login(user, password)
-        smtp.sendmail(sender, recipients, msg.as_string())
-    return {"status": "succeeded", "id": "smtp"}
-
-
 def stage_send(
     config: AppConfig,
     recipients: list[str],
@@ -2187,54 +1948,32 @@ def stage_send(
     date_label: str,
     logger: logging.Logger,
 ) -> tuple[bool, str]:
-    provider = (config.email_provider or "acs").lower()
-
-    def _do_send() -> dict[str, Any]:
-        if provider == "sendgrid":
-            api_key = os.environ.get("SENDGRID_API_KEY", "") or config.sendgrid_api_key
-            if not api_key:
-                raise RuntimeError("SENDGRID_API_KEY not set")
-            sender = config.acs_sender or os.environ.get("EMAIL_SENDER", "")
-            if not sender:
-                raise RuntimeError("email sender (acs_sender or EMAIL_SENDER) not set")
-            return send_via_sendgrid(api_key, sender, recipients, subject, html_body)
-        if provider == "smtp":
-            host = config.smtp_host or os.environ.get("SMTP_HOST", "")
-            port = config.smtp_port or int(os.environ.get("SMTP_PORT", "587") or 587)
-            user = config.smtp_user or os.environ.get("SMTP_USER", "")
-            pw = config.smtp_pass or os.environ.get("SMTP_PASS", "")
-            sender = config.acs_sender or user
-            if not host or not sender:
-                raise RuntimeError("SMTP host/sender not configured")
-            return send_via_smtp(
-                host,
-                port,
-                user,
-                pw,
-                config.smtp_use_ssl,
-                sender,
-                recipients,
-                subject,
-                html_body,
-            )
-        # default ACS
-        connection_string = read_acs_connection_string(config)
-        if not connection_string:
-            raise RuntimeError("ACS connection string not found in env or config")
-        return send_via_acs(
-            connection_string, config.acs_sender, recipients, subject, html_body
+    connection_string = read_acs_connection_string()
+    if not connection_string:
+        detail = "ACS connection string not found in env or secrets file"
+        append_send_log(
+            {
+                "date": date_label,
+                "subject": subject,
+                "recipients": recipients,
+                "status": "failed",
+                "detail": detail,
+                "ts": utc_now().isoformat(),
+            },
+            logger,
         )
+        log_event(logger, logging.ERROR, "send_failed", error=detail)
+        return False, detail
 
     last_error = ""
     for attempt in range(1, 3):
         try:
-            result = _do_send()
+            result = send_via_acs(
+                connection_string, config.acs_sender, recipients, subject, html_body
+            )
             status = str(result.get("status") or "").lower()
             if status in {"succeeded", "success"}:
-                detail = "%s send succeeded (%s)" % (
-                    provider,
-                    result.get("id") or "no-id",
-                )
+                detail = "ACS send succeeded (%s)" % (result.get("id") or "no-id")
                 append_send_log(
                     {
                         "date": date_label,
@@ -2242,7 +1981,6 @@ def stage_send(
                         "recipients": recipients,
                         "status": "success",
                         "detail": detail,
-                        "provider": provider,
                         "result": result,
                         "ts": utc_now().isoformat(),
                     },
@@ -2254,12 +1992,10 @@ def stage_send(
                     "send_success",
                     recipients=recipients,
                     detail=detail,
-                    provider=provider,
                 )
                 return True, detail
-            last_error = "%s send returned status=%s" % (
-                provider,
-                result.get("status") or "unknown",
+            last_error = "ACS send returned status=%s" % (
+                result.get("status") or "unknown"
             )
             log_event(
                 logger, logging.WARNING, "send_retry", attempt=attempt, error=last_error
@@ -2279,12 +2015,11 @@ def stage_send(
             "recipients": recipients,
             "status": "failed",
             "detail": last_error,
-            "provider": provider,
             "ts": utc_now().isoformat(),
         },
         logger,
     )
-    log_event(logger, logging.ERROR, "send_failed", error=last_error, provider=provider)
+    log_event(logger, logging.ERROR, "send_failed", error=last_error)
     return False, last_error
 
 
@@ -2426,7 +2161,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--legacy",
         action="store_true",
-        help="Force legacy single-model mode (use flat llm config only)",
+        help="Force legacy single-model mode (copilot-proxy)",
     )
     return parser.parse_args()
 
