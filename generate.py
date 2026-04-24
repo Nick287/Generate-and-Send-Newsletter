@@ -387,12 +387,11 @@ def validate_config(doc: Any) -> AppConfig:
         raise ValueError("config.yaml issue_number must be a positive integer")
     if (
         not isinstance(recipients, list)
-        or not recipients
-        or not all(isinstance(item, str) and item.strip() for item in recipients)
+        or not all(isinstance(item, str) for item in recipients)
     ):
-        raise ValueError("config.yaml recipients must be a non-empty list of strings")
-    if not isinstance(acs_sender, str) or not acs_sender.strip():
-        raise ValueError("config.yaml acs_sender must be a non-empty string")
+        raise ValueError("config.yaml recipients must be a list of strings")
+    if not isinstance(acs_sender, str):
+        acs_sender = ""
     if not isinstance(llm, dict):
         raise ValueError("config.yaml llm must be a mapping")
     if not isinstance(fetch, dict):
