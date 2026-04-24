@@ -18,7 +18,7 @@ import string
 import subprocess
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
@@ -35,7 +35,11 @@ CONFIG_FILE = ROOT / "config.yaml"
 TEMPLATES_DIR = ROOT / "templates"
 CURATE_PROMPT_FILE = PROMPTS_DIR / "curate-v5.md"
 TMP_HTML_FILE = Path(os.environ.get("NEWSLETTER_TMP_HTML", "/tmp/ai-newsletter.html"))
-ACS_SECRET_FILE = Path(os.environ.get("ACS_SECRET_FILE", "")) if os.environ.get("ACS_SECRET_FILE") else None
+ACS_SECRET_FILE = (
+    Path(os.environ.get("ACS_SECRET_FILE", ""))
+    if os.environ.get("ACS_SECRET_FILE")
+    else None
+)
 DEFAULT_LLM_ENDPOINT = "https://api.openai.com/v1/chat/completions"
 DEFAULT_LLM_MODEL = "gpt-4o"
 DEFAULT_ACS_SENDER = ""
@@ -67,7 +71,9 @@ BAD_IMAGE_PATTERNS = [
 SEMVER_PATTERN = re.compile(r"^v?\d+\.\d+(\.\d+)?(-[\w.]+)?$")
 _BUILD_NUMBER_PATTERN = re.compile(r"^b\d+$")
 _HEX_HASH_PATTERN = re.compile(r"^[a-f0-9]{7,}$")
-_PRERELEASE_PATTERN = re.compile(r"(rc\d*|alpha|beta|preview|nightly|dev)", re.IGNORECASE)
+_PRERELEASE_PATTERN = re.compile(
+    r"(rc\d*|alpha|beta|preview|nightly|dev)", re.IGNORECASE
+)
 
 
 def is_github_releases_feed(url: str) -> bool:
@@ -119,6 +125,7 @@ def pick_latest_github_release(articles: list["Article"]) -> list["Article"]:
     pool.sort(key=_sort_key, reverse=True)
     return pool[:1]
 
+
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 
 VALID_TAGS = {"HEADLINE", "RESEARCH", "TOOL", "AZURE", "QUICK"}
@@ -131,6 +138,18 @@ class FeedSource:
     url: str
     max_items: Optional[int] = None
     skip_enrich: bool = False
+    channel: Optional[str] = None
+    keywords: list[str] = field(default_factory=list)
+
+
+@dataclass
+class LLMConfig:
+    endpoint: str
+    model: str
+    subscription_key: str
+    temperature: float
+    max_tokens: int
+    timeout: int
 
 
 @dataclass
@@ -162,6 +181,8 @@ class AppConfig:
     enrich_fetch_timeout: int
     enrich_max_body_chars: int
     cleanup_retention_days: int
+    primary_llm: Optional[LLMConfig] = None
+    fallback_llm: Optional[LLMConfig] = None
     llm_fallback_endpoint: str = ""
     llm_fallback_api_key: str = ""
     llm_fallback_model: str = ""
@@ -349,36 +370,90 @@ def validate_feeds(doc: Any) -> list[FeedSource]:
             raise ValueError("feeds.yaml categories must be non-empty strings")
         if not isinstance(feeds, list):
             raise ValueError("feeds.yaml category %s must contain a list" % category)
+        is_tg = category == "telegram_channels"
         for index, feed in enumerate(feeds):
             if not isinstance(feed, dict):
                 raise ValueError(
                     "feeds.yaml entry %s[%s] must be an object" % (category, index)
                 )
             name = feed.get("name")
-            url = feed.get("url")
             if not isinstance(name, str) or not name.strip():
                 raise ValueError(
                     "feeds.yaml entry %s[%s] is missing a valid name"
                     % (category, index)
                 )
-            if not isinstance(url, str) or not url.strip():
-                raise ValueError(
-                    "feeds.yaml entry %s[%s] is missing a valid url" % (category, index)
-                )
             max_items = feed.get("max_items")
             if max_items is not None:
                 max_items = int(max_items)
             skip_enrich = bool(feed.get("skip_enrich", False))
-            sources.append(
-                FeedSource(
-                    category=category,
-                    name=name.strip(),
-                    url=url.strip(),
-                    max_items=max_items,
-                    skip_enrich=skip_enrich,
+            if is_tg:
+                channel = feed.get("channel")
+                if not isinstance(channel, str) or not channel.strip():
+                    raise ValueError(
+                        "feeds.yaml entry %s[%s] is missing a valid channel"
+                        % (category, index)
+                    )
+                raw_keywords = feed.get("keywords", [])
+                keywords = (
+                    [str(k) for k in raw_keywords]
+                    if isinstance(raw_keywords, list)
+                    else []
                 )
-            )
+                sources.append(
+                    FeedSource(
+                        category=category,
+                        name=name.strip(),
+                        url="https://t.me/s/%s" % channel.strip(),
+                        max_items=max_items,
+                        skip_enrich=skip_enrich,
+                        channel=channel.strip(),
+                        keywords=keywords,
+                    )
+                )
+            else:
+                url = feed.get("url")
+                if not isinstance(url, str) or not url.strip():
+                    raise ValueError(
+                        "feeds.yaml entry %s[%s] is missing a valid url"
+                        % (category, index)
+                    )
+                sources.append(
+                    FeedSource(
+                        category=category,
+                        name=name.strip(),
+                        url=url.strip(),
+                        max_items=max_items,
+                        skip_enrich=skip_enrich,
+                    )
+                )
     return sources
+
+
+def _parse_llm_section(section: dict[str, Any], label: str) -> LLMConfig:
+    ep = section.get("endpoint", "")
+    mdl = section.get("model", "")
+    sub_key = section.get("subscription_key", "") or section.get("api_key", "")
+    temp = section.get("temperature", 0.2)
+    mt = section.get("max_tokens", 8000)
+    to = section.get("timeout", 180)
+    if not isinstance(ep, str) or not ep.strip():
+        raise ValueError("config.yaml %s.endpoint must be a non-empty string" % label)
+    if not isinstance(mdl, str) or not mdl.strip():
+        raise ValueError("config.yaml %s.model must be a non-empty string" % label)
+    if not isinstance(temp, (float, int)):
+        raise ValueError("config.yaml %s.temperature must be a number" % label)
+    if not isinstance(mt, int) or mt < 256:
+        raise ValueError("config.yaml %s.max_tokens must be >= 256" % label)
+    if not isinstance(to, int) or to < 10:
+        raise ValueError("config.yaml %s.timeout must be >= 10" % label)
+    return LLMConfig(
+        endpoint=ep.strip(),
+        model=mdl.strip(),
+        subscription_key=sub_key.strip() if isinstance(sub_key, str) else "",
+        temperature=float(temp),
+        max_tokens=mt,
+        timeout=to,
+    )
 
 
 def validate_config(doc: Any) -> AppConfig:
@@ -414,7 +489,9 @@ def validate_config(doc: Any) -> AppConfig:
         or not recipients
         or not all(isinstance(item, str) and item.strip() for item in recipients)
     ):
-        raise ValueError("config recipients must be a non-empty list of strings (under email.recipients or top-level)")
+        raise ValueError(
+            "config recipients must be a non-empty list of strings (under email.recipients or top-level)"
+        )
     if not isinstance(acs_sender, str):
         acs_sender = ""
     if email_provider == "acs" and not acs_sender.strip():
@@ -429,7 +506,11 @@ def validate_config(doc: Any) -> AppConfig:
         raise ValueError("config.yaml cleanup must be a mapping")
 
     endpoint = llm.get("endpoint", DEFAULT_LLM_ENDPOINT)
-    api_key = llm.get("api_key", "") or os.environ.get("LLM_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
+    api_key = (
+        llm.get("api_key", "")
+        or os.environ.get("LLM_API_KEY", "")
+        or os.environ.get("OPENAI_API_KEY", "")
+    )
     model = llm.get("model", DEFAULT_LLM_MODEL)
     fallback_endpoint = llm.get("fallback_endpoint", "") or ""
     fallback_api_key = llm.get("fallback_api_key", "") or ""
@@ -483,6 +564,45 @@ def validate_config(doc: Any) -> AppConfig:
     if not isinstance(retention_days, int) or retention_days < 1:
         raise ValueError("config.yaml cleanup.retention_days must be >= 1")
 
+    # Build LLMConfig objects for dual-model support
+    primary_llm: Optional[LLMConfig] = None
+    fallback_llm: Optional[LLMConfig] = None
+
+    if isinstance(llm.get("primary"), dict):
+        # Nested YAML config: llm.primary / llm.fallback sections
+        primary_llm = _parse_llm_section(llm["primary"], "llm.primary")
+        fb = llm.get("fallback")
+        if isinstance(fb, dict):
+            fallback_llm = _parse_llm_section(fb, "llm.fallback")
+    else:
+        # Auto-build from env vars if available (GitHub Actions pattern)
+        env_ep = os.environ.get("LLM_ENDPOINT", "")
+        env_key = os.environ.get("LLM_API_KEY", "") or os.environ.get(
+            "OPENAI_API_KEY", ""
+        )
+        env_model = os.environ.get("LLM_MODEL", "")
+        if env_ep and env_model:
+            primary_llm = LLMConfig(
+                endpoint=env_ep,
+                model=env_model,
+                subscription_key=env_key,
+                temperature=float(temperature),
+                max_tokens=max_tokens,
+                timeout=timeout,
+            )
+        env_fb_ep = os.environ.get("LLM_FALLBACK_ENDPOINT", "")
+        env_fb_key = os.environ.get("LLM_FALLBACK_API_KEY", "")
+        env_fb_model = os.environ.get("LLM_FALLBACK_MODEL", "")
+        if env_fb_ep and env_fb_model:
+            fallback_llm = LLMConfig(
+                endpoint=env_fb_ep,
+                model=env_fb_model,
+                subscription_key=env_fb_key,
+                temperature=float(temperature),
+                max_tokens=max_tokens,
+                timeout=timeout,
+            )
+
     return AppConfig(
         issue_number=issue_number,
         recipients=[item.strip() for item in recipients],
@@ -501,6 +621,8 @@ def validate_config(doc: Any) -> AppConfig:
         llm_temperature=float(temperature),
         llm_max_tokens=max_tokens,
         llm_timeout=timeout,
+        primary_llm=primary_llm,
+        fallback_llm=fallback_llm,
         llm_fallback_endpoint=str(fallback_endpoint).strip(),
         llm_fallback_api_key=str(fallback_api_key).strip(),
         llm_fallback_model=str(fallback_model).strip(),
@@ -879,6 +1001,153 @@ def fetch_single_feed(
         session.close()
 
 
+def fetch_tg_channel(
+    source: FeedSource,
+    cutoff: dt.datetime,
+    config: AppConfig,
+    logger: logging.Logger,
+) -> tuple[list[Article], Optional[str]]:
+    channel = source.channel
+    if not channel:
+        return [], source.name
+    keywords_lower = [k.lower() for k in source.keywords]
+    entry_limit = source.max_items or config.fetch_max_per_feed
+    session = requests.Session()
+    headers = {"User-Agent": "AI-Weekly-Digest/5.0 (+newsletter)"}
+    articles: list[Article] = []
+    url = "https://t.me/s/%s" % channel
+    try:
+        pages_fetched = 0
+        max_pages = 10
+        while url and pages_fetched < max_pages:
+            pages_fetched += 1
+            response = request_with_retry(
+                session=session,
+                method="GET",
+                url=url,
+                timeout=20,
+                headers=headers,
+                logger=logger,
+                retries=2,
+                delay=2.0,
+            )
+            tree = lxml_html.fromstring(response.text)
+            msg_wraps = tree.xpath(
+                '//div[contains(@class, "tgme_widget_message_wrap")]'
+            )
+            if not msg_wraps:
+                break
+            oldest_in_page_within_window = False
+            for wrap in msg_wraps:
+                post_divs = wrap.xpath(
+                    './/div[contains(@class, "tgme_widget_message ")]'
+                )
+                data_post = ""
+                if post_divs:
+                    data_post = post_divs[0].get("data-post", "")
+                time_els = wrap.xpath(".//time[@datetime]")
+                published: Optional[dt.datetime] = None
+                if time_els:
+                    try:
+                        published = dt.datetime.fromisoformat(
+                            time_els[0].get("datetime", "")
+                        )
+                        if published.tzinfo is None:
+                            published = published.replace(tzinfo=dt.timezone.utc)
+                    except (ValueError, TypeError):
+                        published = None
+                if published is not None and published < cutoff:
+                    continue
+                if published is not None:
+                    oldest_in_page_within_window = True
+                text_divs = wrap.xpath(
+                    './/div[contains(@class, "tgme_widget_message_text")]'
+                )
+                text = text_divs[0].text_content().strip() if text_divs else ""
+                if not text:
+                    continue
+                if keywords_lower:
+                    text_lower = text.lower()
+                    if not any(kw in text_lower for kw in keywords_lower):
+                        continue
+                preview_links = wrap.xpath(
+                    './/a[contains(@class, "tgme_widget_message_link_preview")]/@href'
+                )
+                link = ""
+                if preview_links:
+                    link = preview_links[0]
+                if not link and data_post:
+                    link = "https://t.me/%s" % data_post
+                if not link:
+                    link = "https://t.me/s/%s" % channel
+                title = truncate_text(text, 120)
+                image_url: Optional[str] = None
+                photo_wraps = wrap.xpath(
+                    './/a[contains(@class, "tgme_widget_message_photo_wrap")]/@style'
+                )
+                if photo_wraps:
+                    style = photo_wraps[0]
+                    img_match = re.search(r"url\(['\"]?(https?://[^'\")\s]+)", style)
+                    if img_match:
+                        image_url = img_match.group(1)
+                articles.append(
+                    Article(
+                        title=title,
+                        link=link,
+                        source_name=source.name,
+                        category=source.category,
+                        published_date=(
+                            published.isoformat() if published is not None else None
+                        ),
+                        raw_summary=truncate_text(text, 1200),
+                        image_url=image_url,
+                    )
+                )
+                if len(articles) >= entry_limit:
+                    break
+            if len(articles) >= entry_limit:
+                break
+            if not oldest_in_page_within_window:
+                break
+            first_post_divs = msg_wraps[0].xpath(
+                './/div[contains(@class, "tgme_widget_message ")]'
+            )
+            if first_post_divs:
+                first_data_post = first_post_divs[0].get("data-post", "")
+                msg_id_str = (
+                    first_data_post.split("/")[-1] if "/" in first_data_post else ""
+                )
+                if msg_id_str.isdigit():
+                    url = "https://t.me/s/%s?before=%s" % (channel, msg_id_str)
+                else:
+                    break
+            else:
+                break
+        articles = articles[:entry_limit]
+        log_event(
+            logger,
+            logging.INFO,
+            "tg_channel_fetch_success",
+            channel=channel,
+            source=source.name,
+            count=len(articles),
+            pages=pages_fetched,
+        )
+        return articles, None
+    except Exception as exc:
+        log_event(
+            logger,
+            logging.WARNING,
+            "tg_channel_fetch_failed",
+            channel=channel,
+            source=source.name,
+            error=str(exc),
+        )
+        return [], source.name
+    finally:
+        session.close()
+
+
 def stage_fetch(
     config: AppConfig,
     feeds: list[FeedSource],
@@ -902,11 +1171,20 @@ def stage_fetch(
     cutoff = utc_now() - dt.timedelta(days=config.fetch_window_days)
     articles: list[Article] = []
     failed_feeds: list[str] = []
+    rss_feeds = [f for f in feeds if not f.channel]
+    tg_feeds = [f for f in feeds if f.channel]
     with futures.ThreadPoolExecutor(max_workers=config.fetch_max_workers) as executor:
-        future_map = {
-            executor.submit(fetch_single_feed, source, cutoff, config, logger): source
-            for source in feeds
-        }
+        future_map: dict[
+            futures.Future[tuple[list[Article], Optional[str]]], FeedSource
+        ] = {}
+        for source in rss_feeds:
+            future_map[
+                executor.submit(fetch_single_feed, source, cutoff, config, logger)
+            ] = source
+        for source in tg_feeds:
+            future_map[
+                executor.submit(fetch_tg_channel, source, cutoff, config, logger)
+            ] = source
         for future in futures.as_completed(future_map):
             fetched_articles, failed_feed = future.result()
             articles.extend(fetched_articles)
@@ -1108,6 +1386,79 @@ def llm_chat(
         raise
 
 
+def llm_chat_with_fallback(
+    config: AppConfig,
+    logger: logging.Logger,
+    system_prompt: str,
+    user_prompt: str,
+    retries: int,
+    delay_seconds: float,
+    stage_name: str,
+) -> str:
+    models_to_try: list[tuple[str, Optional[LLMConfig]]] = []
+    if config.primary_llm:
+        models_to_try.append(
+            ("primary/%s" % config.primary_llm.model, config.primary_llm)
+        )
+    if config.fallback_llm:
+        models_to_try.append(
+            ("fallback/%s" % config.fallback_llm.model, config.fallback_llm)
+        )
+    if not models_to_try:
+        models_to_try.append(("legacy/%s" % config.llm_model, None))
+
+    last_error: Optional[Exception] = None
+    for label, override in models_to_try:
+        try:
+            if override:
+                content = _llm_call(
+                    endpoint=override.endpoint,
+                    api_key=override.subscription_key,
+                    model=override.model,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=override.temperature,
+                    max_tokens=override.max_tokens,
+                    timeout=override.timeout,
+                    retries=retries,
+                    delay_seconds=delay_seconds,
+                    logger=logger,
+                    label=label,
+                )
+            else:
+                content = _llm_call(
+                    endpoint=config.llm_endpoint,
+                    api_key=config.llm_api_key,
+                    model=config.llm_model,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=config.llm_temperature,
+                    max_tokens=config.llm_max_tokens,
+                    timeout=config.llm_timeout,
+                    retries=retries,
+                    delay_seconds=delay_seconds,
+                    logger=logger,
+                    label=label,
+                )
+            log_event(
+                logger,
+                logging.INFO,
+                "%s_model_used" % stage_name,
+                model=label,
+            )
+            return content
+        except Exception as exc:
+            last_error = exc
+            log_event(
+                logger,
+                logging.WARNING,
+                "%s_model_failed" % stage_name,
+                model=label,
+                error=str(exc),
+            )
+    raise last_error or RuntimeError("All LLM models failed for %s" % stage_name)
+
+
 def stage_pre_score(
     articles: list[Article], config: AppConfig, logger: logging.Logger
 ) -> list[Article]:
@@ -1137,8 +1488,14 @@ def stage_pre_score(
 
     scores: dict[int, float] = {}
     try:
-        content = llm_chat(
-            config, logger, system_prompt, user_prompt, retries=1, delay_seconds=3.0
+        content = llm_chat_with_fallback(
+            config,
+            logger,
+            system_prompt,
+            user_prompt,
+            retries=1,
+            delay_seconds=3.0,
+            stage_name="pre_score",
         )
         parsed = parse_json_array(content)
         for item in parsed:
@@ -1225,8 +1582,12 @@ def enrich_article(
     fetch_url = article.link
     if "news.google.com" in fetch_url:
         try:
-            head_resp = session.head(fetch_url, timeout=10, allow_redirects=True,
-                                     headers={"User-Agent": "AI-Weekly-Digest/5.0"})
+            head_resp = session.head(
+                fetch_url,
+                timeout=10,
+                allow_redirects=True,
+                headers={"User-Agent": "AI-Weekly-Digest/5.0"},
+            )
             if head_resp.url and "news.google.com" not in head_resp.url:
                 fetch_url = head_resp.url
                 enriched.link = fetch_url
@@ -1469,8 +1830,14 @@ def stage_curate(
 
     critical_failure = False
     try:
-        content = llm_chat(
-            config, logger, prompt_text, user_prompt, retries=2, delay_seconds=5.0
+        content = llm_chat_with_fallback(
+            config,
+            logger,
+            prompt_text,
+            user_prompt,
+            retries=2,
+            delay_seconds=5.0,
+            stage_name="curate",
         )
         curated = normalize_curated_output(parse_json_array(content))
         log_event(logger, logging.INFO, "curate_llm_success", story_count=len(curated))
@@ -1840,8 +2207,15 @@ def stage_send(
             if not host or not sender:
                 raise RuntimeError("SMTP host/sender not configured")
             return send_via_smtp(
-                host, port, user, pw, config.smtp_use_ssl,
-                sender, recipients, subject, html_body,
+                host,
+                port,
+                user,
+                pw,
+                config.smtp_use_ssl,
+                sender,
+                recipients,
+                subject,
+                html_body,
             )
         # default ACS
         connection_string = read_acs_connection_string(config)
@@ -1857,7 +2231,10 @@ def stage_send(
             result = _do_send()
             status = str(result.get("status") or "").lower()
             if status in {"succeeded", "success"}:
-                detail = "%s send succeeded (%s)" % (provider, result.get("id") or "no-id")
+                detail = "%s send succeeded (%s)" % (
+                    provider,
+                    result.get("id") or "no-id",
+                )
                 append_send_log(
                     {
                         "date": date_label,
@@ -1872,15 +2249,26 @@ def stage_send(
                     logger,
                 )
                 log_event(
-                    logger, logging.INFO, "send_success",
-                    recipients=recipients, detail=detail, provider=provider,
+                    logger,
+                    logging.INFO,
+                    "send_success",
+                    recipients=recipients,
+                    detail=detail,
+                    provider=provider,
                 )
                 return True, detail
-            last_error = "%s send returned status=%s" % (provider, result.get("status") or "unknown")
-            log_event(logger, logging.WARNING, "send_retry", attempt=attempt, error=last_error)
+            last_error = "%s send returned status=%s" % (
+                provider,
+                result.get("status") or "unknown",
+            )
+            log_event(
+                logger, logging.WARNING, "send_retry", attempt=attempt, error=last_error
+            )
         except Exception as exc:
             last_error = str(exc)
-            log_event(logger, logging.WARNING, "send_retry", attempt=attempt, error=last_error)
+            log_event(
+                logger, logging.WARNING, "send_retry", attempt=attempt, error=last_error
+            )
         if attempt < 2:
             time.sleep(10)
 
@@ -1898,6 +2286,8 @@ def stage_send(
     )
     log_event(logger, logging.ERROR, "send_failed", error=last_error, provider=provider)
     return False, last_error
+
+
 def success_summary_message(
     article_count: int,
     stories: list[dict[str, Any]],
@@ -2033,6 +2423,11 @@ def parse_args() -> argparse.Namespace:
         "--dry-run", action="store_true", help="Run the full pipeline but skip send"
     )
     parser.add_argument("--to", help="Override recipient email(s), comma-separated")
+    parser.add_argument(
+        "--legacy",
+        action="store_true",
+        help="Force legacy single-model mode (copilot-proxy)",
+    )
     return parser.parse_args()
 
 
@@ -2048,6 +2443,8 @@ def load_runtime_config(logger: logging.Logger) -> tuple[AppConfig, list[FeedSou
         feed_count=len(feeds),
         recipients=config.recipients,
         llm_endpoint=config.llm_endpoint,
+        primary_model=config.primary_llm.model if config.primary_llm else None,
+        fallback_model=config.fallback_llm.model if config.fallback_llm else None,
     )
     return config, feeds
 
@@ -2060,6 +2457,10 @@ def main() -> int:
 
     try:
         config, feeds = load_runtime_config(logger)
+        if args.legacy:
+            config.primary_llm = None
+            config.fallback_llm = None
+            log_event(logger, logging.INFO, "legacy_mode_enabled")
         cleanup_old_data_files(config.cleanup_retention_days, logger)
 
         if args.compose_only:

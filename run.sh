@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Wrapper for the enhanced v5 newsletter pipeline.
 # Loads optional .env, then runs generate.py with any args passed through.
+# Usage: ./run.sh [--dry-run] [--fetch-only] [--compose-only] [--legacy] [--to addr]
+#   --legacy   Force legacy single-model mode (ignores APIM dual-model config)
 set -euo pipefail
 cd "$(dirname "$0")"
 

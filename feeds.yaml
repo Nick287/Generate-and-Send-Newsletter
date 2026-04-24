@@ -116,3 +116,12 @@ releases:
     url: https://github.com/open-webui/open-webui/releases.atom
   - name: Transformers
     url: https://github.com/huggingface/transformers/releases.atom
+
+telegram_channels:
+  - name: TeaHub News
+    channel: teahubnews
+    keywords: ["AI", "LLM", "GPT", "Claude", "Gemini", "Azure", "OpenAI", "Anthropic", "DeepSeek", "model", "agent", "transformer", "GPU", "NVIDIA", "inference", "fine-tune", "RAG", "embedding"]
+    max_items: 15
+  - name: Lucius AI Commentary
+    channel: Lucius40k
+    max_items: 10

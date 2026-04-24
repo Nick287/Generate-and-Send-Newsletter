@@ -14,6 +14,24 @@ llm:
   max_tokens: 8000
   timeout: 180
 
+  # ---- Dual-model (APIM) — optional ------------------------------------------
+  # When present, the pipeline uses primary → fallback with Ocp-Apim-Subscription-Key.
+  # Remove this section to use the single-model above (or pass --legacy at runtime).
+  primary:
+    endpoint: "https://YOUR-APIM.azure-api.net/grok/chat/completions"
+    model: "grok-4-20-reasoning"
+    subscription_key: "YOUR_PRIMARY_APIM_KEY"
+    temperature: 0.3
+    max_tokens: 16000
+    timeout: 300
+  fallback:
+    endpoint: "https://YOUR-APIM.azure-api.net/openai/deployments/gpt-54/chat/completions?api-version=2024-10-21"
+    model: "gpt-54"
+    subscription_key: "YOUR_FALLBACK_APIM_KEY"
+    temperature: 0.2
+    max_tokens: 8000
+    timeout: 180
+
 # ---- Email -------------------------------------------------------------------
 email:
   provider: "acs"                  # one of: acs | sendgrid | smtp
