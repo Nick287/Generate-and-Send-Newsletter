@@ -556,13 +556,39 @@ def article_datetime(article: Article) -> Optional[dt.datetime]:
         return None
 
 
+# Major AI vendor names and release action words for launch detection
+_MAJOR_VENDORS = re.compile(
+    r"(?i)\b(gpt[-\s]?[\d.]+|claude[-\s]?[\d.]+|gemini[-\s]?[\d.]+"
+    r"|deepseek[-\s]?v?[\d.]+|llama[-\s]?[\d.]+|mistral[-\s]?[\d.]+"
+    r"|grok[-\s]?[\d.]+|qwen[-\s]?[\d.]+|phi[-\s]?[\d.]+)\b"
+)
+_VENDOR_NAMES = re.compile(
+    r"(?i)\b(deepseek|openai|anthropic|google|meta|mistral|xai|alibaba)\b"
+)
+_VERSION_NUMBER = re.compile(r"(?i)\bv?\d+[.]\d+\b|\bv\d+\b")
+_LAUNCH_WORDS = re.compile(r"(?i)\b(releas|launch|introduc|announc|unveil|open.?sourc)")
+
+
+def _is_major_release(title: str) -> bool:
+    """Detect major model release announcements by title heuristics."""
+    has_launch = bool(_LAUNCH_WORDS.search(title))
+    if not has_launch:
+        return False
+    if _MAJOR_VENDORS.search(title):
+        return True
+    return bool(_VENDOR_NAMES.search(title) and _VERSION_NUMBER.search(title))
+
+
 def article_weighted_score(article: Article) -> float:
     """Compute weighted score: pre_score dominant (85%) + recency bonus (15%).
 
     Uses exponential decay with 72-hour half-life. For a weekly newsletter,
     pre_score (importance) must dominate over recency.
+    Major model releases get a 2x boost to prevent being buried by volume.
     """
     score = article.pre_score if article.pre_score is not None else 4.0
+    if _is_major_release(article.title):
+        score = min(10.0, score * 2.0)
     published = article_datetime(article)
     if published is None:
         return score * 0.85
@@ -707,6 +733,48 @@ def request_with_retry(
                 logger,
                 logging.WARNING,
                 "http_retry",
+                method=method,
+                url=url,
+                attempt=attempt,
+                error=str(exc),
+            )
+            if attempt <= retries:
+                time.sleep(delay)
+    raise RuntimeError(
+        "%s %s failed after retries: %s" % (method.upper(), url, last_error)
+    )
+
+
+def enrich_request_with_retry(
+    method: str,
+    url: str,
+    timeout: int,
+    logger: logging.Logger,
+    retries: int = 1,
+    delay: float = 2.0,
+    **kwargs: Any,
+) -> Any:
+    """Like request_with_retry but uses curl_cffi with browser impersonation."""
+    from curl_cffi.requests import Session as CffiSession
+
+    last_error: Optional[Exception] = None
+    for attempt in range(1, retries + 2):
+        try:
+            session = CffiSession(impersonate="chrome120")
+            response = session.request(
+                method=method.upper(),  # type: ignore[arg-type]
+                url=url,
+                timeout=timeout,
+                **kwargs,
+            )
+            response.raise_for_status()
+            return response
+        except Exception as exc:
+            last_error = exc
+            log_event(
+                logger,
+                logging.WARNING,
+                "enrich_http_retry",
                 method=method,
                 url=url,
                 attempt=attempt,
@@ -1357,17 +1425,46 @@ def extract_og_image(html_text: str) -> Optional[str]:
     return None
 
 
+def extract_body_image(html_text: str, base_url: str) -> Optional[str]:
+    from urllib.parse import urljoin
+
+    for match in re.finditer(
+        r"<img\s[^>]*src=[\"']([^\"']+)[\"'][^>]*>", html_text, re.I
+    ):
+        src = match.group(1).strip()
+        tag_html = match.group(0)
+        if src.startswith("data:"):
+            continue
+        if src.lower().endswith(".svg"):
+            continue
+        width_match = re.search(r"width=[\"']?(\d+)", tag_html, re.I)
+        height_match = re.search(r"height=[\"']?(\d+)", tag_html, re.I)
+        if width_match and int(width_match.group(1)) < 200:
+            continue
+        if width_match and height_match:
+            if int(width_match.group(1)) <= 1 and int(height_match.group(1)) <= 1:
+                continue
+        elif height_match and int(height_match.group(1)) <= 1:
+            continue
+        if not src.startswith("http"):
+            src = urljoin(base_url, src)
+        if not src.startswith("http"):
+            continue
+        if is_bad_image_url(src):
+            continue
+        return src
+    return None
+
+
 def enrich_article(
     article: Article,
-    session: requests.Session,
     config: AppConfig,
     logger: logging.Logger,
 ) -> Article:
     enriched = Article(**asdict(article))
     fallback = truncate_text(article.raw_summary, config.enrich_max_body_chars)
     try:
-        response = request_with_retry(
-            session=session,
+        response = enrich_request_with_retry(
             method="GET",
             url=article.link,
             timeout=config.enrich_fetch_timeout,
@@ -1383,9 +1480,13 @@ def enrich_article(
             body = fallback
         enriched.full_text_excerpt = body or fallback
         og_image = extract_og_image(response.text)
-        if og_image:
+        if og_image and not is_bad_image_url(og_image):
             enriched.og_image = og_image
             enriched.image_url = og_image
+        if not enriched.image_url or is_bad_image_url(enriched.image_url or ""):
+            body_image = extract_body_image(response.text, article.link)
+            if body_image:
+                enriched.image_url = body_image
         log_event(
             logger,
             logging.INFO,
@@ -1469,14 +1570,10 @@ def stage_enrich(
 
     candidates = pre_scored[: config.enrich_top_candidates]
     enriched: list[Article] = []
-    session = requests.Session()
-    try:
-        for index, article in enumerate(candidates):
-            if index > 0 and config.enrich_fetch_delay > 0:
-                time.sleep(config.enrich_fetch_delay)
-            enriched.append(enrich_article(article, session, config, logger))
-    finally:
-        session.close()
+    for index, article in enumerate(candidates):
+        if index > 0 and config.enrich_fetch_delay > 0:
+            time.sleep(config.enrich_fetch_delay)
+        enriched.append(enrich_article(article, config, logger))
 
     path = enriched_path(date_label)
     save_articles(path, enriched)
@@ -1543,6 +1640,9 @@ def sanitize_story(story: dict[str, Any]) -> Optional[dict[str, Any]]:
     image_url = str(story.get("image_url", "")).strip() or None
     if image_url and is_bad_image_url(image_url):
         image_url = None
+    if _is_major_release(title):
+        tag = "HEADLINE"
+    published_date = str(story.get("published_date", "")).strip() or None
     return {
         "title": title,
         "link": link,
@@ -1553,6 +1653,7 @@ def sanitize_story(story: dict[str, Any]) -> Optional[dict[str, Any]]:
         "read_time_minutes": max(1, read_time),
         "image_url": image_url,
         "tag": tag,
+        "published_date": published_date,
     }
 
 
@@ -1574,7 +1675,10 @@ def normalize_curated_output(raw_stories: Any) -> list[dict[str, Any]]:
         stories.append(sanitized)
 
     stories.sort(key=lambda s: -s.get("score", 0))
-    return stories
+    # Promote major releases to top positions (C1-C8 = main content area)
+    major = [s for s in stories if _is_major_release(s.get("title", ""))]
+    rest = [s for s in stories if not _is_major_release(s.get("title", ""))]
+    return major + rest
 
 
 def fallback_curated_output(articles: list[Article]) -> list[dict[str, Any]]:
@@ -1610,14 +1714,19 @@ def inject_images(
     stories: list[dict[str, Any]], articles: list[Article]
 ) -> list[dict[str, Any]]:
     image_map: dict[str, str] = {}
+    date_map: dict[str, str] = {}
     for article in articles:
         best = article.image_url or article.og_image
         if best and not is_bad_image_url(best):
             image_map[article.link] = best
+        if article.published_date:
+            date_map[article.link] = article.published_date
     for story in stories:
         link = story.get("link", "")
         if link in image_map and not story.get("image_url"):
             story["image_url"] = image_map[link]
+        if not story.get("published_date") and link in date_map:
+            story["published_date"] = date_map[link]
     return stories
 
 
@@ -1701,14 +1810,7 @@ def get_image_or_placeholder(story: dict[str, Any]) -> str:
     url = story.get("image_url", "")
     if url and url not in ("None", "null") and not is_bad_image_url(url):
         return url
-    tag = story.get("tag", "NEWS")
-    source = story.get("source", "AI")
-    color = TAG_PLACEHOLDER_COLORS.get(tag, "6B7280")
-    text = "%s%%0A%s" % (tag, source.replace(" ", "+"))
-    return "https://placehold.co/190x107/%s/ffffff?text=%s&font=source-sans-pro" % (
-        color,
-        text,
-    )
+    return ""
 
 
 def escape_html(value: str) -> str:
@@ -1818,6 +1920,10 @@ def compose_html(
             result = result.replace(
                 "{{%s_TIME}}" % prefix, str(story.get("read_time_minutes", 3))
             )
+            result = result.replace(
+                "{{%s_DATE}}" % prefix,
+                escape_html(format_sidebar_date(story.get("published_date"))),
+            )
         else:
             result = result.replace("{{%s_TITLE}}" % prefix, "")
             result = result.replace("{{%s_LINK}}" % prefix, "#")
@@ -1825,6 +1931,7 @@ def compose_html(
             result = result.replace("{{%s_ONELINER}}" % prefix, "")
             result = result.replace("{{%s_SOURCE}}" % prefix, "")
             result = result.replace("{{%s_TIME}}" % prefix, "")
+            result = result.replace("{{%s_DATE}}" % prefix, "")
 
     for i in range(5):
         prefix = "Q%d" % (i + 1)
@@ -1843,11 +1950,16 @@ def compose_html(
             result = result.replace(
                 "{{%s_SOURCE}}" % prefix, escape_html(story.get("source", ""))
             )
+            result = result.replace(
+                "{{%s_DATE}}" % prefix,
+                escape_html(format_sidebar_date(story.get("published_date"))),
+            )
         else:
             result = result.replace("{{%s_TITLE}}" % prefix, "")
             result = result.replace("{{%s_LINK}}" % prefix, "#")
             result = result.replace("{{%s_ONELINER}}" % prefix, "")
             result = result.replace("{{%s_SOURCE}}" % prefix, "")
+            result = result.replace("{{%s_DATE}}" % prefix, "")
 
     sidebar_items = extract_azure_sidebar_items(scanned_articles)
     for i in range(10):
