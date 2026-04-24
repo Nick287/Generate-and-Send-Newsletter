@@ -2426,7 +2426,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--legacy",
         action="store_true",
-        help="Force legacy single-model mode (copilot-proxy)",
+        help="Force legacy single-model mode (use flat llm config only)",
     )
     return parser.parse_args()
 
