@@ -36,9 +36,7 @@ CONFIG_FILE = ROOT / "config.yaml"
 TEMPLATES_DIR = ROOT / "templates"
 CURATE_PROMPT_FILE = PROMPTS_DIR / "curate-v5.md"
 TMP_HTML_FILE = Path("/tmp/openclaw/ai-newsletter-v7.html")
-ACS_SECRET_FILE = Path(
-    os.environ.get("ACS_SECRET_FILE", "")
-)
+ACS_SECRET_FILE = Path(os.environ.get("ACS_SECRET_FILE", ""))
 DEFAULT_LLM_ENDPOINT = "http://localhost:18600/v1/chat/completions"
 DEFAULT_LLM_MODEL = "claude-opus-4.6"
 DEFAULT_ACS_SENDER = "DoNotReply@ab0b5b73-4afe-49c7-8e5b-8a84b5dc2e3f.azurecomm.net"
@@ -383,6 +381,8 @@ def validate_config(doc: Any) -> AppConfig:
     enrich = doc.get("enrich", {})
     cleanup = doc.get("cleanup", {})
 
+    if issue_number is None:
+        issue_number = 1
     if not isinstance(issue_number, int) or issue_number < 1:
         raise ValueError("config.yaml issue_number must be a positive integer")
     if (
@@ -511,9 +511,9 @@ def parse_entry_datetime(entry: Any) -> Optional[dt.datetime]:
     parsed_fields = ["published_parsed", "updated_parsed", "created_parsed"]
     text_fields = ["published", "updated", "created", "dc_date", "date"]
 
-    for field in parsed_fields:
+    for fname in parsed_fields:
         value = (
-            entry.get(field) if isinstance(entry, dict) else getattr(entry, field, None)
+            entry.get(fname) if isinstance(entry, dict) else getattr(entry, fname, None)
         )
         if value:
             try:
@@ -521,9 +521,9 @@ def parse_entry_datetime(entry: Any) -> Optional[dt.datetime]:
             except Exception:
                 continue
 
-    for field in text_fields:
+    for fname in text_fields:
         raw = (
-            entry.get(field) if isinstance(entry, dict) else getattr(entry, field, None)
+            entry.get(fname) if isinstance(entry, dict) else getattr(entry, fname, None)
         )
         if not raw:
             continue
@@ -1265,10 +1265,12 @@ def stage_pre_score(
 
     system_prompt = "You score newsletter candidates from 1-10. Return only JSON."
     user_prompt = (
-        "Score each article from 1 to 10 for newsletter priority. Favor Azure relevance, customer value,"
-        " technical actionability, novelty, and source quality. Return a JSON array of objects with"
-        " keys index and score only.\n\nArticles:\n%s"
-        % json.dumps(batch, ensure_ascii=False)
+        "Score each article from 1 to 10 for newsletter"
+        " priority. Favor Azure relevance, customer"
+        " value, technical actionability, novelty, and"
+        " source quality. Return a JSON array of objects"
+        " with keys index and score only."
+        "\n\nArticles:\n%s" % json.dumps(batch, ensure_ascii=False)
     )
 
     scores: dict[int, float] = {}
