@@ -385,11 +385,11 @@ def validate_config(doc: Any) -> AppConfig:
         issue_number = 1
     if not isinstance(issue_number, int) or issue_number < 1:
         raise ValueError("config.yaml issue_number must be a positive integer")
-    if (
-        not isinstance(recipients, list)
-        or not all(isinstance(item, str) for item in recipients)
-    ):
-        raise ValueError("config.yaml recipients must be a list of strings")
+    # Coerce recipients: comma-separated string → list, missing → empty list
+    if isinstance(recipients, str):
+        recipients = [r.strip() for r in recipients.split(",") if r.strip()]
+    if not isinstance(recipients, list):
+        recipients = []
     if not isinstance(acs_sender, str):
         acs_sender = ""
     if not isinstance(llm, dict):
