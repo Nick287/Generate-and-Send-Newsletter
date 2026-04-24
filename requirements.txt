@@ -1,4 +1,16 @@
-requests
+# Core pipeline dependencies
+feedparser==6.0.12
+trafilatura==2.0.0
+readability-lxml==0.8.4.1
+requests==2.33.1
+pyyaml==6.0.3
+lxml==6.1.0
+
+# Email providers (install only what you need)
+azure-communication-email==1.1.0
+# sendgrid==6.11.0    # uncomment if using SendGrid
+
+# Optional: for Nick's original newsletter_git_action.py path
 openai
-html2text
 markdown
+html2text

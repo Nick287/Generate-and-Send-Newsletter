@@ -1,0 +1,110 @@
+# AI Weekly Digest — Feed Sources
+# Last updated: 2026-04-21
+
+azure_microsoft:
+  - name: Azure Blog
+    url: https://azure.microsoft.com/en-us/blog/feed/
+  - name: Azure Updates Feed
+    url: https://www.microsoft.com/releasecommunications/api/v2/azure/rss
+  - name: Microsoft AI Blog
+    url: https://blogs.microsoft.com/ai/feed/
+  - name: Microsoft Research Blog
+    url: https://www.microsoft.com/en-us/research/blog/feed/
+  - name: MS Source AI
+    url: https://news.microsoft.com/source/topics/ai/feed/
+  - name: GitHub Blog
+    url: https://github.blog/feed/
+  - name: Azure AI Foundry Blog
+    url: https://devblogs.microsoft.com/foundry/feed/
+
+competitor_cloud:
+  - name: AWS ML Blog
+    url: https://aws.amazon.com/blogs/machine-learning/feed/
+  - name: GCP AI Release Notes
+    url: https://cloud.google.com/feeds/ai-platform-release-notes.xml
+  - name: NVIDIA Developer Blog
+    url: https://developer.nvidia.com/blog/feed/
+
+labs:
+  - name: OpenAI Blog
+    url: https://openai.com/news/rss.xml
+  - name: Google DeepMind
+    url: https://deepmind.google/blog/rss.xml
+  - name: Google Research
+    url: https://blog.research.google/feeds/posts/default
+  - name: HuggingFace Blog
+    url: https://huggingface.co/blog/feed.xml
+  - name: Anthropic News (Google News)
+    url: https://news.google.com/rss/search?q=%22Anthropic%22+OR+%22Claude%22+when:7d&hl=en-US&gl=US&ceid=US:en
+  - name: Meta AI (Google News)
+    url: https://news.google.com/rss/search?q=%22Meta+AI%22+OR+Llama+when:7d&hl=en-US&gl=US&ceid=US:en
+
+media:
+  - name: TechCrunch AI
+    url: https://techcrunch.com/category/artificial-intelligence/feed/
+  - name: The Verge AI
+    url: https://www.theverge.com/rss/ai-artificial-intelligence/index.xml
+  - name: Ars Technica AI
+    url: https://feeds.arstechnica.com/arstechnica/ai
+  - name: Wired AI
+    url: https://www.wired.com/feed/tag/ai/latest/rss
+  - name: MIT Tech Review AI
+    url: https://www.technologyreview.com/feed/
+  - name: VentureBeat AI
+    url: https://venturebeat.com/category/ai/feed/
+  - name: MarkTechPost
+    url: https://www.marktechpost.com/feed/
+  - name: The Decoder
+    url: https://the-decoder.com/feed/
+
+newsletters:
+  - name: TLDR AI
+    url: https://tldr.tech/api/rss/ai
+  - name: Import AI
+    url: https://jack-clark.net/feed/
+  - name: Latent Space
+    url: https://www.latent.space/feed
+  - name: Last Week in AI
+    url: https://lastweekin.ai/feed
+  - name: AI News (smol-ai)
+    url: https://buttondown.com/ainews/rss
+  - name: Simon Willison
+    url: https://simonwillison.net/atom/everything/
+  - name: Smol AI News
+    url: https://news.smol.ai/rss.xml
+  - name: Interconnects
+    url: https://www.interconnects.ai/feed
+
+analysts:
+  - name: Stratechery
+    url: https://stratechery.com/feed/
+  - name: Benedict Evans
+    url: https://www.ben-evans.com/benedictevans?format=rss
+
+research:
+  - name: ArXiv cs.AI
+    url: http://export.arxiv.org/rss/cs.AI
+    max_items: 10
+
+community:
+  - name: Reddit LocalLLaMA
+    url: https://www.reddit.com/r/LocalLLaMA/.rss?sort=top&t=week
+    max_items: 10
+    skip_enrich: true
+  - name: Hacker News AI
+    url: https://hnrss.org/newest?q=AI+OR+LLM&points=100
+    max_items: 10
+
+releases:
+  - name: vLLM
+    url: https://github.com/vllm-project/vllm/releases.atom
+  - name: llama.cpp
+    url: https://github.com/ggerganov/llama.cpp/releases.atom
+  - name: LangChain
+    url: https://github.com/langchain-ai/langchain/releases.atom
+  - name: Ollama
+    url: https://github.com/ollama/ollama/releases.atom
+  - name: Open WebUI
+    url: https://github.com/open-webui/open-webui/releases.atom
+  - name: Transformers
+    url: https://github.com/huggingface/transformers/releases.atom
