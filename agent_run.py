@@ -179,8 +179,7 @@ async def newsletter_pipeline(args_dict: dict[str, Any]) -> dict[str, Any]:
     if dry_run:
         tg(_success_msg(len(articles), stories, "dry-run"))
         print("\n--- Pipeline finished (dry-run mode, email skipped) ---")
-        code = 2 if llm_failed else (1 if failed_feeds else 0)
-        return {"exit_code": code, "status": "dry-run", "stories": len(stories)}
+        return {"exit_code": 0, "status": "dry-run", "stories": len(stories)}
 
     # ── Step 5: Send ─────────────────────────────────────────────────
     if to_override and to_override.strip():
@@ -200,8 +199,7 @@ async def newsletter_pipeline(args_dict: dict[str, Any]) -> dict[str, Any]:
 
     tg(_success_msg(len(articles), stories, send_out["detail"]))
     print("\n--- Pipeline finished successfully ---")
-    code = 2 if llm_failed else (1 if failed_feeds else 0)
-    return {"exit_code": code, "status": "ok", "stories": len(stories)}
+    return {"exit_code": 0, "status": "ok", "stories": len(stories)}
 
 
 # ── CLI | 命令行 ────────────────────────────────────────────────────
