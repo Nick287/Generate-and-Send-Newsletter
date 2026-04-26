@@ -37,14 +37,13 @@ jobs:
           llm:
             endpoint: ""
             api_key: ""
-            model: "gpt-4o"
+            model: "gpt-5.4"
             temperature: 0.2
             max_tokens: 8000
             timeout: 180
           email:
             provider: "smtp"
             recipients: []
-            smtp_use_ssl: true
           fetch:
             window_days: 7
             max_workers: 10
