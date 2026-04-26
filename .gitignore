@@ -207,9 +207,9 @@ marimo/_lsp/
 __marimo__/
 
 # AI Newsletter pipeline artifacts
-config.yaml
-data/
-output/
+config/config.yaml
+artifacts/
+dist/
 fetched.json
 curated.json
 newsletter.html

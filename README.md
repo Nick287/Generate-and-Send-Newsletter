@@ -1,123 +1,227 @@
-# Generate-and-Send-Newsletter
+# AI Weekly Digest
 
-**Auto-fetch AI news → AI curation & summarization → Generate newsletter email → Scheduled delivery**
+**Auto-fetch 40+ RSS feeds → LLM curation & scoring → Responsive HTML newsletter → Scheduled email delivery**
 
 [中文文档](README_CN.md)
 
 ---
 
-This repo now ships **two pipelines** side-by-side. Pick the one that matches your needs:
+## Overview
 
-| Pipeline | Entry point | Source | Best for |
-|---|---|---|---|
-| **Original (Nick's)** | `newsletter_git_action.py` | Single RSS feed → AI summary → SMTP | Simple daily digest from one source, fully driven by env vars / GitHub Actions |
-| **Enhanced v5 (this PR)** | `generate.py` | 40+ curated feeds → 6-stage curation → multi-provider email | Weekly curated digest with full LLM scoring + responsive HTML template |
+A fully automated AI newsletter pipeline that:
 
-Everything from the original setup still works exactly as before. Read on for the enhanced pipeline.
+1. **Fetches** 40+ RSS/Atom feeds in parallel (Azure, AWS, GCP, OpenAI, Anthropic, research labs, media …)
+2. **Enriches** articles with full-text extraction + OG image scraping
+3. **Curates** via LLM — scores, tags, ranks, writes summaries
+4. **Composes** a responsive HTML email from a template
+5. **Sends** via SMTP / Azure Communication Services / SendGrid
 
----
+Two ways to run:
 
-## Enhanced Pipeline (v5) — Overview
-
-```
-┌─────────┐  ┌─────────┐  ┌──────────┐  ┌─────────┐  ┌──────┐  ┌────────┐
-│ Fetch   │→ │ Enrich  │→ │ Curate   │→ │ Compose │→ │ Send │→ │ Report │
-│ 40+ RSS │  │ Full    │  │ LLM      │  │ HTML    │  │ ACS/ │  │ Logs + │
-│ in para │  │ text +  │  │ scoring  │  │ email   │  │ SG/  │  │ TG     │
-│ -llel   │  │ OG img  │  │ + tags   │  │ template│  │ SMTP │  │ notify │
-└─────────┘  └─────────┘  └──────────┘  └─────────┘  └──────┘  └────────┘
-```
-
-### Key features
-
-- **40+ RSS feeds** — Azure, AWS, GCP, NVIDIA, OpenAI / Anthropic / Google labs, AI media, analyst blogs (`feeds.yaml`)
-- **Full-text enrichment** — `trafilatura`-based article extraction + Open Graph image scraping
-- **LLM-powered curation** — DCSA-focused scoring rubric (`prompts/curate-v5.md`); works with any OpenAI-compatible endpoint
-- **Responsive HTML template** — `templates/v7.html`; uses `dir=rtl` sidebar trick so desktop renders the sidebar on the right and mobile collapses it on top
-- **Multi-provider email** — `acs` (Azure Communication Services), `sendgrid`, or `smtp`, picked from `config.yaml`
-- **Production-grade stability** — per-feed error isolation, LLM retry with backoff, image fallbacks (`placehold.co`), idempotent runs
-- **Optional progress notifier** — set `TG_NOTIFY_SCRIPT` to ping Telegram / Slack on milestones
+| Mode | Entry point | Features |
+|---|---|---|
+| **Plain orchestrator** | `python run_pipeline.py` | Sequential 5-step pipeline, simple & debuggable |
+| **Agent Framework** | `python agent_run.py` | Per-step checkpointing, streaming, resume on failure |
 
 ---
 
-## Quick start (enhanced pipeline)
+## Project Structure
+
+```
+.
+├── agent_run.py               # Agent Framework workflow entry point
+├── run_pipeline.py            # Plain pipeline orchestrator
+├── requirements.txt
+│
+├── config/
+│   ├── config.yaml            # Main config (gitignored)
+│   ├── config.example.yaml    # Template — copy to config.yaml
+│   └── feeds.yaml             # 40+ RSS feed sources (9 categories)
+│
+├── core/                      # Core library
+│   ├── models.py              # Dataclasses (Article, AppConfig, ...)
+│   ├── paths.py               # Path constants & helpers
+│   ├── constants.py           # Business constants (tags, patterns, ...)
+│   ├── config_loader.py       # ConfigLoader
+│   ├── llm_client.py          # LlmClient (OpenAI-compatible)
+│   ├── feed_fetcher.py        # FeedFetcher
+│   ├── article_enricher.py    # ArticleEnricher
+│   ├── content_curator.py     # ContentCurator
+│   ├── html_composer.py       # HtmlComposer
+│   ├── email_dispatcher.py    # EmailDispatcher
+│   └── utils/                 # Utility sub-package
+│       ├── logging.py         #   Logging & Telegram notification
+│       ├── text.py            #   HTML strip, truncate, escape
+│       ├── dates.py           #   Date/time helpers & parsing
+│       ├── articles.py        #   Dedup, save/load JSON
+│       ├── http.py            #   HTTP request with retry
+│       ├── images.py          #   Image URL validation
+│       ├── modules.py         #   Lazy module loaders
+│       └── cleanup.py         #   Old data file cleanup
+│
+├── steps/                     # Decoupled step functions
+│   ├── step0_config.py        # Load & validate config
+│   ├── step1_fetch.py         # Fetch RSS feeds
+│   ├── step2_enrich.py        # Pre-score & enrich articles
+│   ├── step3_curate.py        # LLM curation
+│   ├── step4_compose.py       # Compose HTML newsletter
+│   └── step5_send.py          # Send email
+│
+├── prompts/
+│   └── curate-v5.md           # LLM curation prompt (scoring rubric)
+├── templates/
+│   └── v7.html                # Responsive HTML email template
+│
+├── artifacts/                 # Intermediate data (gitignored)
+│   ├── fetched-YYYY-MM-DD.json
+│   ├── enriched-YYYY-MM-DD.json
+│   ├── curated-YYYY-MM-DD.json
+│   └── send-log.json
+├── dist/                      # Final output (gitignored)
+│   └── newsletter-YYYY-MM-DD.html
+│
+├── function/                  # Legacy modules (EmailSender used by SMTP)
+└── .github/workflows/
+    └── Generate-and-Send-Daily-AI-Newsletter.yaml
+```
+
+---
+
+## Quick Start
+
+### 1. Install dependencies
 
 ```bash
-# 1. Install deps
 pip install -r requirements.txt
-
-# 2. Copy example config and fill in your keys
-cp config.example.yaml config.yaml
-$EDITOR config.yaml          # set llm.api_key, email.provider, recipients, etc.
-
-# 3. Dry-run to make sure it composes the email without sending
-python3 generate.py --dry-run
-
-# 4. Full run + send
-python3 generate.py
-# or
-./run.sh
 ```
 
-`config.yaml` is gitignored — never commit it.
-
-### Useful flags
+### 2. Configure
 
 ```bash
-python3 generate.py --dry-run            # build HTML, don't send
-python3 generate.py --fetch-only         # stop after fetch stage (debug feeds)
-python3 generate.py --to a@x.com,b@y.com # override recipients
+cp config/config.example.yaml config/config.yaml
 ```
 
-Outputs:
-- `output/<date>/newsletter.html` — final HTML
-- `data/fetched.json`, `data/curated.json` — pipeline artifacts
-- `data/send-log.json` — delivery audit log
+Edit `config/config.yaml` — at minimum set:
+
+```yaml
+llm:
+  api_key: "sk-..."           # or set env LLM_API_KEY / OPENAI_API_KEY
+  model: "gpt-4o"
+
+email:
+  provider: "smtp"             # acs | sendgrid | smtp
+  recipients:
+    - "you@example.com"
+  smtp_host: "smtp.example.com"
+  smtp_port: 587
+  smtp_user: "you@example.com"
+  smtp_pass: "..."
+```
+
+### 3. Run
+
+```bash
+# Plain orchestrator
+python run_pipeline.py --dry-run        # compose without sending
+python run_pipeline.py                  # full run
+
+# Agent Framework (with checkpointing)
+python agent_run.py --dry-run
+python agent_run.py
+python agent_run.py --stream            # watch events in real time
+```
+
+---
+
+## Running with Agent Framework
+
+`agent_run.py` uses [Microsoft Agent Framework](https://pypi.org/project/agent-framework/) to wrap each step as an `@step` with automatic checkpointing:
+
+```bash
+# Install (already in requirements.txt)
+pip install agent-framework
+
+# Full pipeline with checkpointing
+python agent_run.py
+
+# Dry run — skip email sending
+python agent_run.py --dry-run
+
+# Override recipients
+python agent_run.py --to alice@example.com,bob@example.com
+
+# Stream mode — print step events in real time
+python agent_run.py --stream
+```
+
+**Benefits over `run_pipeline.py`:**
+- **Checkpointing** — if a step fails, re-run resumes from where it left off (skips completed steps)
+- **Streaming** — `--stream` shows `executor_invoked` / `executor_completed` events live
+- **Production-ready** — swap `InMemoryCheckpointStorage` for `CosmosCheckpointStorage` for durable state
+
+---
+
+## CLI Reference
+
+### `run_pipeline.py`
+
+```bash
+python run_pipeline.py                      # full pipeline
+python run_pipeline.py --dry-run            # skip email send
+python run_pipeline.py --fetch-only         # stop after fetch + enrich
+python run_pipeline.py --compose-only       # re-compose from latest curated artifact
+python run_pipeline.py --to a@x.com,b@y.com # override recipients
+```
+
+### `agent_run.py`
+
+```bash
+python agent_run.py                         # full pipeline with checkpointing
+python agent_run.py --dry-run               # skip email send
+python agent_run.py --to a@x.com            # override recipients
+python agent_run.py --stream                # stream step events
+```
 
 ---
 
 ## Configuring `config.yaml`
 
-See `config.example.yaml` for the full schema. The most important sections:
+See [`config/config.example.yaml`](config/config.example.yaml) for the full schema.
 
 ### LLM
 
 ```yaml
 llm:
   endpoint: "https://api.openai.com/v1/chat/completions"
-  api_key: "sk-..."        # or set env LLM_API_KEY / OPENAI_API_KEY
+  api_key: "sk-..."
   model: "gpt-4o"
 ```
 
-Any OpenAI-compatible Chat Completions endpoint works (OpenAI, Azure OpenAI proxy, vLLM, LiteLLM, Ollama with the OpenAI shim, Claude via `anthropic-openai`, etc.).
+Any OpenAI-compatible endpoint works (OpenAI, Azure OpenAI, vLLM, LiteLLM, Ollama, etc.).
 
 ### Email — pick a provider
 
 ```yaml
 email:
-  provider: "acs"          # acs | sendgrid | smtp
-  recipients:
-    - "team@company.com"
+  provider: "smtp"              # acs | sendgrid | smtp
+  recipients: ["team@co.com"]
 
-  # ACS
-  acs_sender: "DoNotReply@xxxxx.azurecomm.net"
-  acs_connection_string: "endpoint=https://...;accesskey=..."
+  # SMTP
+  smtp_host: "smtp.office365.com"
+  smtp_port: 587
+  smtp_user: "you@example.com"
+  smtp_pass: "..."
+
+  # ACS (alternative)
+  # acs_sender: "DoNotReply@xxx.azurecomm.net"
+  # acs_connection_string: "endpoint=https://..."
 
   # SendGrid (alternative)
   # sendgrid_api_key: "SG.xxxx"
-
-  # SMTP (alternative)
-  # smtp_host: "smtp.office365.com"
-  # smtp_port: 587
-  # smtp_user: "you@example.com"
-  # smtp_pass: "..."
 ```
 
-You can also pass secrets via env vars instead of `config.yaml`:
-- `ACS_CONNECTION_STRING`
-- `SENDGRID_API_KEY`
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`
-- `LLM_API_KEY` / `OPENAI_API_KEY`
+Secrets can also be set via environment variables:
+`LLM_API_KEY`, `OPENAI_API_KEY`, `ACS_CONNECTION_STRING`, `SENDGRID_API_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `TO_ADDRS`
 
 ---
 
@@ -125,95 +229,44 @@ You can also pass secrets via env vars instead of `config.yaml`:
 
 | What | Where |
 |---|---|
-| Add / remove RSS feeds | `feeds.yaml` (grouped by category) |
-| Change scoring rubric / categories / tone | `prompts/curate-v5.md` |
-| Change visual layout | `templates/v7.html` (table-based, email-client-safe) |
-| Change LLM model / temperature / max_tokens | `config.yaml` → `llm:` |
-| Change look-back window / feed concurrency | `config.yaml` → `fetch:` |
+| Add / remove RSS feeds | `config/feeds.yaml` |
+| Change scoring rubric / tone | `prompts/curate-v5.md` |
+| Change visual layout | `templates/v7.html` |
+| Change LLM model / temperature | `config/config.yaml` → `llm:` |
+| Change look-back window | `config/config.yaml` → `fetch:` |
 
 ---
 
-## Scheduling
+## GitHub Actions (Daily Automated Run)
 
-### cron (server / VM)
+The workflow at `.github/workflows/Generate-and-Send-Daily-AI-Newsletter.yaml` runs the pipeline daily at **UTC 08:00** and can also be triggered manually.
 
-```cron
-# Every Monday 09:00 local time
-0 9 * * 1  cd /path/to/Generate-and-Send-Newsletter && ./run.sh >> run.log 2>&1
-```
+### Setup
 
-### GitHub Actions
+1. Go to repo **Settings → Secrets and variables → Actions**
+2. Add the secrets and variables listed below
+3. The workflow runs `python agent_run.py` with config materialized from `NEWSLETTER_CONFIG` secret
 
-Nick's existing workflow at `.github/workflows/Generate-and-Send-Daily-AI-Newsletter.yaml` continues to run the **original** pipeline. To schedule the **enhanced** one, add a second workflow that:
+### Required Secrets
 
-1. Writes `config.yaml` from a repo secret (e.g. `NEWSLETTER_CONFIG`)
-2. Runs `python generate.py`
+| Secret | Description |
+|---|---|
+| `NEWSLETTER_CONFIG` | Full `config/config.yaml` content |
+| `LLM_API_KEY` | LLM API key (overrides config) |
 
-Example fragment:
+### Optional Variables (for env-var based config)
 
-```yaml
-- name: Materialize config
-  run: 'echo "$NEWSLETTER_CONFIG" > config.yaml'
-  env:
-    NEWSLETTER_CONFIG: ${{ secrets.NEWSLETTER_CONFIG }}
-
-- name: Generate + send
-  run: python generate.py
-```
-
----
-
-## File layout
-
-```
-.
-├── generate.py                # ★ Enhanced v5 pipeline (this PR)
-├── feeds.yaml                 # ★ 40+ curated feeds
-├── config.example.yaml        # ★ Copy → config.yaml
-├── prompts/
-│   └── curate-v5.md           # ★ DCSA scoring rubric prompt
-├── templates/
-│   └── v7.html                # ★ Responsive email template
-├── run.sh                     # ★ Wrapper (loads .env / venv)
-│
-├── newsletter_git_action.py   # Original pipeline (Nick) — unchanged
-├── function/                  # Original pipeline modules — unchanged
-├── NewsTemplate/              # Original template — unchanged
-└── .github/workflows/         # Original GitHub Actions workflow — unchanged
-```
-
----
-
-## Original pipeline
-
-The original simple-RSS / SMTP pipeline is fully preserved. Its setup instructions are below for completeness.
-
-### Quick start (original)
-
-```bash
-pip install -r requirements.txt
-# Set env vars (see .env example below)
-python newsletter_git_action.py
-```
-
-### Required env vars (original)
-
-```env
-AZURE_OPENAI_TOKEN=your_azure_openai_api_key
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-RSS_URL=https://your-rss-feed-url.com/rss.xml
-SMTP_HOST=smtp.example.com
-SMTP_PORT=465
-SENDER_USERNAME=your_email@example.com
-SENDER_PASSWORD=your_email_password
-TO_ADDRS=recipient1@example.com,recipient2@example.com
-FROM_ALIAS=AI Newsletter
-```
-
-GitHub Actions workflow: `.github/workflows/Generate-and-Send-Daily-AI-Newsletter.yaml`.
+| Variable | Description |
+|---|---|
+| `SMTP_HOST` | SMTP server (e.g. `smtp.office365.com`) |
+| `SMTP_PORT` | SMTP port (e.g. `587`) |
+| `SMTP_USER` | Sender email |
+| `SMTP_PASS` | SMTP password |
+| `TO_ADDRS` | Recipients (comma-separated) |
+| `FROM_ALIAS` | Sender display name |
 
 ---
 
 ## License
 
-MIT — see `LICENSE`.
+MIT — see [LICENSE](LICENSE).

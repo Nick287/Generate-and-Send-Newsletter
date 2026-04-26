@@ -53,28 +53,3 @@ enrich:
 # ---- Cleanup -----------------------------------------------------------------
 cleanup:
   retention_days: 30
-
-# ---- RSS Feed Sources --------------------------------------------------------
-# Grouped by category. Each entry needs: name, url
-# Optional per-feed: max_items (int), skip_enrich (bool)
-feeds:
-  azure_microsoft:
-    - name: Azure Blog
-      url: https://azure.microsoft.com/en-us/blog/feed/
-    - name: Microsoft AI Blog
-      url: https://blogs.microsoft.com/ai/feed/
-    - name: GitHub Blog
-      url: https://github.blog/feed/
-
-  labs:
-    - name: OpenAI Blog
-      url: https://openai.com/news/rss.xml
-    - name: HuggingFace Blog
-      url: https://huggingface.co/blog/feed.xml
-
-  media:
-    - name: TechCrunch AI
-      url: https://techcrunch.com/category/artificial-intelligence/feed/
-
-  # Add more categories: competitor_cloud, newsletters, analysts, research,
-  # community, releases — see README for full list.
