@@ -113,7 +113,7 @@ class ConfigLoader(Executor):
 
     @handler
     async def handle(self, messages: list[Message], ctx: WorkflowContext[PipelineState]) -> None:
-        last_msg = messages[-1].content[0].text if messages else ""
+        last_msg = messages[-1].contents[0].text if messages else ""
         dry_run = "dry-run" in last_msg.lower() or "dry_run" in last_msg.lower()
 
         await ctx.yield_output(AgentResponseUpdate(
@@ -129,7 +129,6 @@ class ConfigLoader(Executor):
             logger=result["logger"],
             dry_run=dry_run,
         )
-        ctx.set_state(state)
         await ctx.send_message(state)
 
 
@@ -158,7 +157,6 @@ class FeedFetcher(Executor):
             return
 
         data.articles = fetch_out["articles"]
-        ctx.set_state(data)
 
         await ctx.yield_output(AgentResponseUpdate(
             contents=[Content("text", text="📡 Fetched %d articles" % len(data.articles))],
@@ -182,7 +180,6 @@ class ArticleEnricher(Executor):
             _step2_enrich, data.config, data.articles, data.date_label, data.logger
         )
         data.articles = enrich_out["articles"]
-        ctx.set_state(data)
         await ctx.send_message(data)
 
 
@@ -201,7 +198,6 @@ class StoryCurator(Executor):
             _step3_curate, data.config, data.articles, data.date_label, data.logger
         )
         data.stories = curate_out["stories"]
-        ctx.set_state(data)
 
         await ctx.yield_output(AgentResponseUpdate(
             contents=[Content("text", text="🤖 Curated %d stories" % len(data.stories))],
@@ -225,7 +221,6 @@ class HtmlComposer(Executor):
             _step4_compose, data.config, data.stories, data.articles, data.date_label, data.logger
         )
         data.html_body = compose_out["html_body"]
-        ctx.set_state(data)
 
         if data.dry_run:
             tg(_success_msg(len(data.articles), data.stories, "dry-run"))
