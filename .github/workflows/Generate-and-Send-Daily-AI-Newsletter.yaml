@@ -62,8 +62,8 @@ jobs:
           sed -i 's/^          //' config/config.yaml
 
       - name: 5. Generate and send newsletter
-        # Run the Agent Framework pipeline (with checkpointing)
-        # 运行 Agent Framework 流水线（带检查点）
+        # Run the Agent Framework pipeline in CLI mode
+        # 以 CLI 模式运行 Agent Framework 流水线
         env:
           AZURE_OPENAI_TOKEN: ${{ secrets.AZURE_OPENAI_TOKEN }}
           AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
@@ -73,7 +73,7 @@ jobs:
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
           TO_ADDRS: ${{ vars.TO_ADDRS }}
           FROM_ALIAS: ${{ vars.FROM_ALIAS }}
-        run: python agent_run.py
+        run: python agent_run.py --cli
 
       - name: 6. Upload artifacts
         # Save intermediate & output files for debugging
