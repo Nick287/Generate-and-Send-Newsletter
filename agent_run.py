@@ -42,6 +42,7 @@ from agent_framework import (
     register_state_type,
 )
 from agent_framework.observability import configure_otel_providers
+from pydantic import BaseModel, Field
 
 # Enable multi-agent visualization in VS Code Microsoft Foundry extension
 # 启用 VS Code Microsoft Foundry 扩展的多 Agent 可视化
@@ -107,15 +108,18 @@ def _fail_msg(message: str) -> str:
 # Each step is an independent Executor node in the workflow graph.
 # 每个步骤是工作流图中的独立 Executor 节点。
 
+class WorkflowInput(BaseModel):
+    """Input for the newsletter workflow. All fields have defaults — just click Run.
+    新闻简报工作流的输入。所有字段都有默认值 — 直接点 Run 即可。"""
+
+    dry_run: bool = Field(default=False, description="Skip email sending (跳过发送邮件)")
+
+
 class ConfigLoader(Executor):
     """Step 0: Load configuration and feeds.
     步骤0: 加载配置和 feeds。"""
 
-    @handler
-    async def handle(self, messages: list[Message], ctx: WorkflowContext[PipelineState]) -> None:
-        last_msg = messages[-1].contents[0].text if messages else ""
-        dry_run = "dry-run" in last_msg.lower() or "dry_run" in last_msg.lower()
-
+    async def _run(self, dry_run: bool, ctx: WorkflowContext[PipelineState]) -> None:
         await ctx.yield_output(AgentResponseUpdate(
             contents=[Content("text", text="⚙️ Step 0: Loading configuration…")],
             role="assistant", author_name=self.id,
@@ -130,6 +134,10 @@ class ConfigLoader(Executor):
             dry_run=dry_run,
         )
         await ctx.send_message(state)
+
+    @handler
+    async def handle(self, input: WorkflowInput, ctx: WorkflowContext[PipelineState]) -> None:
+        await self._run(input.dry_run, ctx)
 
 
 class FeedFetcher(Executor):
@@ -284,7 +292,7 @@ _story_curator = StoryCurator(id="3-story-curator")
 _html_composer = HtmlComposer(id="4-html-composer")
 _email_sender = EmailSender(id="5-email-sender")
 
-newsletter_agent = (
+newsletter_workflow = (
     WorkflowBuilder(start_executor=_config_loader)
     .add_edge(_config_loader, _feed_fetcher)
     .add_edge(_feed_fetcher, _article_enricher)
@@ -292,7 +300,6 @@ newsletter_agent = (
     .add_edge(_story_curator, _html_composer)
     .add_edge(_html_composer, _email_sender)
     .build()
-    .as_agent()
 )
 
 
@@ -318,7 +325,8 @@ async def run_server() -> None:
     print("  AI Weekly Digest — HTTP Server Mode (Agent Inspector)")
     print("=" * 60)
     print()
-    await from_agent_framework(newsletter_agent).run_async()
+    agent = newsletter_workflow.as_agent()
+    await from_agent_framework(agent).run_async()
 
 
 async def run_cli(args: argparse.Namespace) -> int:
