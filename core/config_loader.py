@@ -211,15 +211,16 @@ class ConfigLoader:
         )
         # Append /chat/completions if endpoint looks like a bare Azure OpenAI base URL
         # 如果端点看起来是裸Azure OpenAI基础URL，自动追加 /chat/completions
+        model = llm.get("model", DEFAULT_LLM_MODEL)
         if endpoint and "cognitiveservices.azure.com" in endpoint and "/chat/completions" not in endpoint:
-            endpoint = endpoint.rstrip("/") + "/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview"
+            deployment = model  # use configured model name as deployment name
+            endpoint = endpoint.rstrip("/") + "/openai/deployments/%s/chat/completions?api-version=2024-12-01-preview" % deployment
         api_key = (
             os.environ.get("AZURE_OPENAI_TOKEN", "")
             or os.environ.get("LLM_API_KEY", "")
             or os.environ.get("OPENAI_API_KEY", "")
             or llm.get("api_key", "")
         )
-        model = llm.get("model", DEFAULT_LLM_MODEL)
         fallback_endpoint = llm.get("fallback_endpoint", "") or ""
         fallback_api_key = llm.get("fallback_api_key", "") or ""
         fallback_model = llm.get("fallback_model", "") or ""
