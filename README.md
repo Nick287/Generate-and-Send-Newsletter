@@ -135,29 +135,48 @@ python agent_run.py --stream            # watch events in real time
 
 ## Running with Agent Framework
 
-`agent_run.py` uses [Microsoft Agent Framework](https://pypi.org/project/agent-framework/) to wrap each step as an `@step` with automatic checkpointing:
+`agent_run.py` uses [Microsoft Agent Framework](https://pypi.org/project/agent-framework/) to model each pipeline step as an independent `Executor` node, connected via `WorkflowBuilder.add_edge()` into a directed workflow graph:
 
-```bash
-# Install (already in requirements.txt)
-pip install agent-framework
+![Workflow Visualizer](image/workflow.png)
 
-# Full pipeline with checkpointing
-python agent_run.py
+### Why a Multi-Executor Workflow?
 
-# Dry run — skip email sending
-python agent_run.py --dry-run
+A traditional script runs all steps inside a single function — if something fails halfway, you restart from scratch. By decomposing the pipeline into **6 independent executor nodes**, we get:
 
-# Override recipients
-python agent_run.py --to alice@example.com,bob@example.com
+| Advantage | Description |
+|---|---|
+| **Visual Observability** | Each node appears in the [Microsoft Foundry Visualizer](https://marketplace.visualstudio.com/items?itemName=ms-windows-ai-studio.windows-ai-studio) — you can watch the execution flow in real time |
+| **Fault Isolation** | If Step 3 (LLM curation) fails, Steps 0–2 results are preserved; you don't re-fetch or re-enrich |
+| **Checkpointing** | The framework automatically checkpoints completed nodes — resume from the last successful step on retry |
+| **Streaming Events** | Built-in `executor_invoked` / `executor_completed` events let you monitor progress without custom logging |
+| **Extensibility** | Add a new step (e.g., "translate", "summarize to Slack") by adding one `Executor` class and one `.add_edge()` call |
+| **Production-ready** | Swap `InMemoryCheckpointStorage` → `CosmosCheckpointStorage` for durable distributed state |
 
-# Stream mode — print step events in real time
-python agent_run.py --stream
+### Workflow Graph
+
+```
+ConfigLoader → FeedFetcher → ArticleEnricher → StoryCurator → HtmlComposer → EmailSender
 ```
 
-**Benefits over `run_pipeline.py`:**
-- **Checkpointing** — if a step fails, re-run resumes from where it left off (skips completed steps)
-- **Streaming** — `--stream` shows `executor_invoked` / `executor_completed` events live
-- **Production-ready** — swap `InMemoryCheckpointStorage` for `CosmosCheckpointStorage` for durable state
+Each node passes a shared `PipelineState` dataclass downstream. The Visualizer shows which node is active, completed, or failed.
+
+### Usage
+
+```bash
+# HTTP Server mode (for Agent Inspector / Visualizer)
+python agent_run.py
+
+# CLI mode
+python agent_run.py --cli --dry-run        # skip email send
+python agent_run.py --cli                  # full run
+python agent_run.py --cli --to a@x.com     # override recipients
+```
+
+### Visualizer Setup
+
+1. Install the [Microsoft Foundry for VS Code](https://marketplace.visualstudio.com/items?itemName=ms-windows-ai-studio.windows-ai-studio) extension
+2. Open Command Palette (`Ctrl+Shift+P`) → `Microsoft Foundry: Open Visualizer for Hosted Agents`
+3. Run your agent — the graph updates in real time
 
 ---
 

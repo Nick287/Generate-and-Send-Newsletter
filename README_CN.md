@@ -129,29 +129,49 @@ python agent_run.py --stream            # 实时查看事件
 
 ## 使用 Agent Framework 运行
 
-`agent_run.py` 基于 [Microsoft Agent Framework](https://pypi.org/project/agent-framework/)，用 `@step` 装饰器为每个步骤添加自动检查点：
+`agent_run.py` 基于 [Microsoft Agent Framework](https://pypi.org/project/agent-framework/)，将每个步骤建模为独立的 `Executor` 节点，通过 `WorkflowBuilder.add_edge()` 连接成有向工作流图：
 
-```bash
-# 安装（已包含在 requirements.txt 中）
-pip install agent-framework
+![工作流可视化](image/workflow.png)
 
-# 完整流水线（带检查点）
-python agent_run.py
+### 为什么使用多 Executor 工作流？
 
-# 试运行 — 跳过邮件发送
-python agent_run.py --dry-run
+传统脚本将所有步骤放在一个函数里 — 中途失败就要从头重跑。将流水线拆分为 **6 个独立 Executor 节点** 后，获得以下优势：
 
-# 覆盖收件人
-python agent_run.py --to alice@example.com,bob@example.com
+| 优势 | 说明 |
+|---|---|
+| **可视化观测** | 每个节点在 [Microsoft Foundry Visualizer](https://marketplace.visualstudio.com/items?itemName=ms-windows-ai-studio.windows-ai-studio) 中独立显示，可实时观察执行流程 |
+| **故障隔离** | 如果步骤3（LLM策展）失败，步骤0-2的结果已保留，无需重新抓取和充实 |
+| **自动检查点** | 框架自动对已完成节点做检查点 — 重试时从最后成功的步骤恢复 |
+| **流式事件** | 内置 `executor_invoked` / `executor_completed` 事件，无需自定义日志即可监控进度 |
+| **易于扩展** | 新增步骤（如"翻译"、"推送到 Slack"）只需添加一个 `Executor` 类和一行 `.add_edge()` |
+| **生产就绪** | 将 `InMemoryCheckpointStorage` 替换为 `CosmosCheckpointStorage` 即可实现持久化分布式状态 |
 
-# 流式模式 — 实时打印步骤事件
-python agent_run.py --stream
+### 工作流图
+
+```
+ConfigLoader → FeedFetcher → ArticleEnricher → StoryCurator → HtmlComposer → EmailSender
+（加载配置）   （抓取RSS）    （文章充实）      （LLM策展）     （组合HTML）    （发送邮件）
 ```
 
-**相比 `run_pipeline.py` 的优势：**
-- **检查点** — 某步失败后重新运行时，已完成的步骤直接跳过
-- **流式输出** — `--stream` 实时显示 `executor_invoked` / `executor_completed` 事件
-- **生产就绪** — 可将 `InMemoryCheckpointStorage` 替换为 `CosmosCheckpointStorage` 实现持久化
+每个节点通过共享的 `PipelineState` 数据类向下游传递状态。Visualizer 实时显示哪个节点正在执行、已完成或失败。
+
+### 使用方式
+
+```bash
+# HTTP 服务器模式（用于 Agent Inspector / Visualizer）
+python agent_run.py
+
+# CLI 模式
+python agent_run.py --cli --dry-run        # 跳过邮件发送
+python agent_run.py --cli                  # 完整运行
+python agent_run.py --cli --to a@x.com     # 覆盖收件人
+```
+
+### Visualizer 配置步骤
+
+1. 安装 [Microsoft Foundry for VS Code](https://marketplace.visualstudio.com/items?itemName=ms-windows-ai-studio.windows-ai-studio) 扩展
+2. 打开命令面板（`Ctrl+Shift+P`）→ 执行 `Microsoft Foundry: Open Visualizer for Hosted Agents`
+3. 运行 agent — 工作流图会实时更新
 
 ---
 

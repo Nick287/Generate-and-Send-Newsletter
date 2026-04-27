@@ -3,22 +3,23 @@
 AI Weekly Digest — Agent Framework workflow entry point.
 AI 周刊摘要 — Agent Framework 工作流入口。
 
-Uses Microsoft Agent Framework's functional workflow API (@workflow + @step)
-to orchestrate the same 5-step newsletter pipeline with:
-使用 Microsoft Agent Framework 的函数式工作流 API 编排相同的5步流水线，提供：
+Uses Microsoft Agent Framework's Executor + WorkflowBuilder API
+to orchestrate the 5-step newsletter pipeline with:
+使用 Microsoft Agent Framework 的 Executor + WorkflowBuilder API 编排5步流水线：
 
-  - Per-step checkpointing (skip expensive re-execution on resume)
-    每步检查点（恢复时跳过已完成的昂贵步骤）
-  - Built-in observability (executor_invoked / executor_completed events)
-    内置可观测性（executor_invoked / executor_completed 事件）
-  - Streaming support (watch progress in real time)
-    流式支持（实时查看进度）
+  - Built-in observability via Agent Inspector
+    通过 Agent Inspector 提供内置可观测性
+  - HTTP server mode for AI Toolkit playground
+    HTTP 服务器模式用于 AI Toolkit playground
+  - CLI mode for command-line execution
+    CLI 模式用于命令行执行
 
 Usage | 用法:
-    python agent_run.py                         # full pipeline | 完整流水线
-    python agent_run.py --dry-run               # skip send | 跳过发送
-    python agent_run.py --to user@example.com   # override recipient | 覆盖收件人
-    python agent_run.py --stream                # stream events | 流式输出事件
+    python agent_run.py                         # HTTP server (Agent Inspector) | HTTP服务器模式
+    python agent_run.py --server                # same as above | 同上
+    python agent_run.py --cli                   # CLI mode full pipeline | CLI模式完整流水线
+    python agent_run.py --cli --dry-run         # CLI skip send | CLI跳过发送
+    python agent_run.py --cli --to user@x.com   # CLI override recipient | CLI覆盖收件人
 """
 
 from __future__ import annotations
@@ -31,21 +32,33 @@ from typing import Any
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(override=True)
 except ImportError:
     pass
 
-from agent_framework import step, workflow, InMemoryCheckpointStorage
+from agent_framework import (
+    Executor, handler, Message, WorkflowBuilder,
+    AgentResponseUpdate, Content, WorkflowContext,
+    register_state_type,
+)
+from agent_framework.observability import configure_otel_providers
+
+# Enable multi-agent visualization in VS Code Microsoft Foundry extension
+# 启用 VS Code Microsoft Foundry 扩展的多 Agent 可视化
+# OTLP gRPC endpoint: http://localhost:4319
+configure_otel_providers(
+    vs_code_extension_port=4319,
+    enable_sensitive_data=True,
+)
 
 from core.utils import (
     log_event,
     tg,
     week_range_label,
 )
-from core.models import AppConfig
 
-# Import the existing step functions (sync) — we wrap them in async @step
-# 导入现有的同步步骤函数 — 用 async @step 包装
+# Import the existing step functions (sync)
+# 导入现有的同步步骤函数
 from steps.step0_config import run as _step0_config
 from steps.step1_fetch import run as _step1_fetch
 from steps.step2_enrich import run as _step2_enrich
@@ -53,67 +66,27 @@ from steps.step3_curate import run as _step3_curate
 from steps.step4_compose import run as _step4_compose
 from steps.step5_send import run as _step5_send
 
-
-# ── Checkpoint storage | 检查点存储 ──────────────────────────────────
-# Switch to CosmosCheckpointStorage for durable persistence in production
-# 生产环境可切换为 CosmosCheckpointStorage 实现持久化
-storage = InMemoryCheckpointStorage()
+from dataclasses import dataclass, field
 
 
-# ── Wrapped steps | 包装的步骤 ───────────────────────────────────────
-# step0 is cheap — no @step needed (always re-runs)
-# step0 很轻量 — 不需要 @step（总是重新执行）
+# ── Shared workflow state | 共享工作流状态 ───────────────────────────
 
-async def load_config() -> dict[str, Any]:
-    """Step 0: Load config (cheap, no caching needed)."""
-    return _step0_config()
+@dataclass
+class PipelineState:
+    """Shared state passed between workflow executors via edges.
+    通过边在工作流 executor 之间传递的共享状态。"""
+    config: Any = None
+    feeds: list = field(default_factory=list)
+    date_label: str = ""
+    logger: Any = None
+    articles: list = field(default_factory=list)
+    stories: list = field(default_factory=list)
+    html_body: str = ""
+    dry_run: bool = False
+    to_override: str | None = None
+    error: str | None = None
 
-
-@step
-async def fetch_feeds(
-    config: AppConfig, feeds: list, date_label: str, logger: logging.Logger,
-) -> dict[str, Any]:
-    """Step 1: Fetch RSS feeds — cached on resume to avoid re-fetching.
-    抓取RSS源 — 恢复时使用缓存避免重复抓取。"""
-    return _step1_fetch(config, feeds, date_label, logger)
-
-
-@step
-async def enrich_articles(
-    config: AppConfig, articles: list, date_label: str, logger: logging.Logger,
-) -> dict[str, Any]:
-    """Step 2: Pre-score & enrich — cached to avoid duplicate LLM pre-scoring.
-    预评分与充实 — 缓存以避免重复LLM预评分。"""
-    return _step2_enrich(config, articles, date_label, logger)
-
-
-@step
-async def curate_stories(
-    config: AppConfig, articles: list, date_label: str, logger: logging.Logger,
-) -> dict[str, Any]:
-    """Step 3: LLM curation — the most expensive step, always cache.
-    LLM筛选 — 最昂贵的步骤，始终缓存。"""
-    return _step3_curate(config, articles, date_label, logger)
-
-
-@step
-async def compose_html(
-    config: AppConfig, stories: list, scanned_articles: list,
-    date_label: str, logger: logging.Logger,
-) -> dict[str, Any]:
-    """Step 4: Compose newsletter HTML.
-    组合新闻简报HTML。"""
-    return _step4_compose(config, stories, scanned_articles, date_label, logger)
-
-
-@step
-async def send_email(
-    config: AppConfig, recipients: list, subject: str,
-    html_body: str, date_label: str, logger: logging.Logger,
-) -> dict[str, Any]:
-    """Step 5: Send email.
-    发送邮件。"""
-    return _step5_send(config, recipients, subject, html_body, date_label, logger)
+register_state_type(PipelineState)
 
 
 # ── Summary helpers | 摘要辅助函数 ───────────────────────────────────
@@ -130,60 +103,268 @@ def _fail_msg(message: str) -> str:
     return "❌ AI Weekly Digest failed: %s" % message[:350]
 
 
-# ── The workflow | 工作流 ────────────────────────────────────────────
+# ── Step Executors | 步骤执行器 ──────────────────────────────────────
+# Each step is an independent Executor node in the workflow graph.
+# 每个步骤是工作流图中的独立 Executor 节点。
 
-@workflow(checkpoint_storage=storage)
-async def newsletter_pipeline(args_dict: dict[str, Any]) -> dict[str, Any]:
-    """
-    Full newsletter pipeline as an Agent Framework workflow.
-    完整的新闻简报流水线，以 Agent Framework 工作流形式运行。
+class ConfigLoader(Executor):
+    """Step 0: Load configuration and feeds.
+    步骤0: 加载配置和 feeds。"""
 
-    Each @step is checkpointed — on resume, completed steps return
-    their saved result without re-execution.
-    每个 @step 都有检查点 — 恢复时已完成的步骤直接返回保存的结果。
-    """
-    dry_run = args_dict.get("dry_run", False)
-    to_override = args_dict.get("to")
+    @handler
+    async def handle(self, messages: list[Message], ctx: WorkflowContext[PipelineState]) -> None:
+        last_msg = messages[-1].content[0].text if messages else ""
+        dry_run = "dry-run" in last_msg.lower() or "dry_run" in last_msg.lower()
 
-    # ── Step 0: Config ───────────────────────────────────────────────
-    ctx = await load_config()
-    config = ctx["config"]
-    feeds = ctx["feeds"]
-    date_label = ctx["date_label"]
-    logger = ctx["logger"]
+        await ctx.yield_output(AgentResponseUpdate(
+            contents=[Content("text", text="⚙️ Step 0: Loading configuration…")],
+            role="assistant", author_name=self.id,
+        ))
 
-    # ── Step 1: Fetch ────────────────────────────────────────────────
-    fetch_out = await fetch_feeds(config, feeds, date_label, logger)
+        result = await asyncio.to_thread(_step0_config)
+        state = PipelineState(
+            config=result["config"],
+            feeds=result["feeds"],
+            date_label=result["date_label"],
+            logger=result["logger"],
+            dry_run=dry_run,
+        )
+        ctx.set_state(state)
+        await ctx.send_message(state)
 
+
+class FeedFetcher(Executor):
+    """Step 1: Fetch RSS feeds.
+    步骤1: 抓取 RSS feeds。"""
+
+    @handler(input=PipelineState)
+    async def handle(self, data: PipelineState, ctx: WorkflowContext[PipelineState]) -> None:
+        await ctx.yield_output(AgentResponseUpdate(
+            contents=[Content("text", text="📡 Step 1: Fetching RSS feeds…")],
+            role="assistant", author_name=self.id,
+        ))
+
+        fetch_out = await asyncio.to_thread(
+            _step1_fetch, data.config, data.feeds, data.date_label, data.logger
+        )
+
+        if fetch_out["abort"]:
+            data.error = fetch_out["abort_message"]
+            log_event(data.logger, logging.ERROR, "fetch_abort", message=data.error)
+            await ctx.yield_output(AgentResponseUpdate(
+                contents=[Content("text", text=_fail_msg(data.error))],
+                role="assistant", author_name=self.id,
+            ))
+            return
+
+        data.articles = fetch_out["articles"]
+        ctx.set_state(data)
+
+        await ctx.yield_output(AgentResponseUpdate(
+            contents=[Content("text", text="📡 Fetched %d articles" % len(data.articles))],
+            role="assistant", author_name=self.id,
+        ))
+        await ctx.send_message(data)
+
+
+class ArticleEnricher(Executor):
+    """Step 2: Pre-score & enrich articles.
+    步骤2: 预评分和充实文章。"""
+
+    @handler(input=PipelineState)
+    async def handle(self, data: PipelineState, ctx: WorkflowContext[PipelineState]) -> None:
+        await ctx.yield_output(AgentResponseUpdate(
+            contents=[Content("text", text="🔍 Step 2: Enriching %d articles…" % len(data.articles))],
+            role="assistant", author_name=self.id,
+        ))
+
+        enrich_out = await asyncio.to_thread(
+            _step2_enrich, data.config, data.articles, data.date_label, data.logger
+        )
+        data.articles = enrich_out["articles"]
+        ctx.set_state(data)
+        await ctx.send_message(data)
+
+
+class StoryCurator(Executor):
+    """Step 3: LLM curation — select top stories.
+    步骤3: LLM 筛选 — 选出最佳故事。"""
+
+    @handler(input=PipelineState)
+    async def handle(self, data: PipelineState, ctx: WorkflowContext[PipelineState]) -> None:
+        await ctx.yield_output(AgentResponseUpdate(
+            contents=[Content("text", text="🤖 Step 3: Curating stories with LLM…")],
+            role="assistant", author_name=self.id,
+        ))
+
+        curate_out = await asyncio.to_thread(
+            _step3_curate, data.config, data.articles, data.date_label, data.logger
+        )
+        data.stories = curate_out["stories"]
+        ctx.set_state(data)
+
+        await ctx.yield_output(AgentResponseUpdate(
+            contents=[Content("text", text="🤖 Curated %d stories" % len(data.stories))],
+            role="assistant", author_name=self.id,
+        ))
+        await ctx.send_message(data)
+
+
+class HtmlComposer(Executor):
+    """Step 4: Compose newsletter HTML.
+    步骤4: 组合新闻简报 HTML。"""
+
+    @handler(input=PipelineState)
+    async def handle(self, data: PipelineState, ctx: WorkflowContext[PipelineState]) -> None:
+        await ctx.yield_output(AgentResponseUpdate(
+            contents=[Content("text", text="📝 Step 4: Composing HTML newsletter…")],
+            role="assistant", author_name=self.id,
+        ))
+
+        compose_out = await asyncio.to_thread(
+            _step4_compose, data.config, data.stories, data.articles, data.date_label, data.logger
+        )
+        data.html_body = compose_out["html_body"]
+        ctx.set_state(data)
+
+        if data.dry_run:
+            tg(_success_msg(len(data.articles), data.stories, "dry-run"))
+            await ctx.yield_output(AgentResponseUpdate(
+                contents=[Content("text", text=_success_msg(len(data.articles), data.stories, "dry-run"))],
+                role="assistant", author_name=self.id,
+            ))
+            return
+
+        await ctx.send_message(data)
+
+
+class EmailSender(Executor):
+    """Step 5: Send newsletter email.
+    步骤5: 发送新闻简报邮件。"""
+
+    @handler(input=PipelineState)
+    async def handle(self, data: PipelineState, ctx: WorkflowContext[PipelineState]) -> None:
+        await ctx.yield_output(AgentResponseUpdate(
+            contents=[Content("text", text="📧 Step 5: Sending email…")],
+            role="assistant", author_name=self.id,
+        ))
+
+        if data.to_override and data.to_override.strip():
+            recipients = [r.strip() for r in data.to_override.split(",") if r.strip()]
+        else:
+            recipients = list(data.config.recipients)
+
+        subject = "🤖 AI Weekly Digest — Week of %s [Issue #%s]" % (
+            week_range_label(window_days=data.config.fetch_window_days),
+            data.config.issue_number,
+        )
+
+        send_out = await asyncio.to_thread(
+            _step5_send, data.config, recipients, subject, data.html_body, data.date_label, data.logger
+        )
+
+        if not send_out["success"]:
+            tg(_fail_msg(send_out["detail"]))
+            await ctx.yield_output(AgentResponseUpdate(
+                contents=[Content("text", text=_fail_msg(send_out["detail"]))],
+                role="assistant", author_name=self.id,
+            ))
+            return
+
+        tg(_success_msg(len(data.articles), data.stories, send_out["detail"]))
+        await ctx.yield_output(AgentResponseUpdate(
+            contents=[Content("text", text=_success_msg(len(data.articles), data.stories, send_out["detail"]))],
+            role="assistant", author_name=self.id,
+        ))
+
+
+# ── Build multi-step workflow | 构建多步骤工作流 ────────────────────
+# Each executor is a visible node in the Foundry Visualizer.
+# 每个 executor 在 Foundry Visualizer 中是一个可见节点。
+
+_config_loader = ConfigLoader(id="0-config-loader")
+_feed_fetcher = FeedFetcher(id="1-feed-fetcher")
+_article_enricher = ArticleEnricher(id="2-article-enricher")
+_story_curator = StoryCurator(id="3-story-curator")
+_html_composer = HtmlComposer(id="4-html-composer")
+_email_sender = EmailSender(id="5-email-sender")
+
+newsletter_agent = (
+    WorkflowBuilder(start_executor=_config_loader)
+    .add_edge(_config_loader, _feed_fetcher)
+    .add_edge(_feed_fetcher, _article_enricher)
+    .add_edge(_article_enricher, _story_curator)
+    .add_edge(_story_curator, _html_composer)
+    .add_edge(_html_composer, _email_sender)
+    .build()
+    .as_agent()
+)
+
+
+# ── CLI | 命令行 ────────────────────────────────────────────────────
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="AI Weekly Digest — Agent Framework workflow")
+    parser.add_argument("--server", action="store_true", default=True,
+                        help="Run as HTTP server for Agent Inspector (default)")
+    parser.add_argument("--cli", action="store_true",
+                        help="Run in CLI mode instead of HTTP server")
+    parser.add_argument("--dry-run", action="store_true", help="Skip email sending (CLI mode)")
+    parser.add_argument("--to", help="Override recipient email(s), comma-separated (CLI mode)")
+    return parser.parse_args()
+
+
+async def run_server() -> None:
+    """Start the agent as an HTTP server for AI Toolkit Agent Inspector.
+    启动 agent 作为 HTTP 服务器，用于 AI Toolkit Agent Inspector。"""
+    from azure.ai.agentserver.agentframework import from_agent_framework
+
+    print("=" * 60)
+    print("  AI Weekly Digest — HTTP Server Mode (Agent Inspector)")
+    print("=" * 60)
+    print()
+    await from_agent_framework(newsletter_agent).run_async()
+
+
+async def run_cli(args: argparse.Namespace) -> int:
+    """Original CLI pipeline mode.
+    原始 CLI 流水线模式。"""
+    print("=" * 60)
+    print("  AI Weekly Digest — CLI Mode")
+    print("=" * 60)
+    print()
+
+    # Step 0: Config
+    ctx = _step0_config()
+    config, feeds, date_label, logger = ctx["config"], ctx["feeds"], ctx["date_label"], ctx["logger"]
+
+    # Step 1: Fetch
+    fetch_out = _step1_fetch(config, feeds, date_label, logger)
     if fetch_out["abort"]:
         msg = fetch_out["abort_message"]
         log_event(logger, logging.ERROR, "fetch_abort", message=msg)
-        tg(_fail_msg(msg))
-        return {"exit_code": 2, "error": msg}
-
+        print(_fail_msg(msg))
+        return 2
     articles = fetch_out["articles"]
-    failed_feeds = fetch_out["failed_feeds"]
 
-    # ── Step 2: Enrich ───────────────────────────────────────────────
-    enrich_out = await enrich_articles(config, articles, date_label, logger)
+    # Step 2: Enrich
+    enrich_out = _step2_enrich(config, articles, date_label, logger)
 
-    # ── Step 3: Curate ───────────────────────────────────────────────
-    curate_out = await curate_stories(config, enrich_out["articles"], date_label, logger)
+    # Step 3: Curate
+    curate_out = _step3_curate(config, enrich_out["articles"], date_label, logger)
     stories = curate_out["stories"]
-    llm_failed = curate_out["llm_failed"]
 
-    # ── Step 4: Compose ──────────────────────────────────────────────
-    compose_out = await compose_html(config, stories, articles, date_label, logger)
+    # Step 4: Compose
+    compose_out = _step4_compose(config, stories, articles, date_label, logger)
     html_body = compose_out["html_body"]
 
-    if dry_run:
-        tg(_success_msg(len(articles), stories, "dry-run"))
-        print("\n--- Pipeline finished (dry-run mode, email skipped) ---")
-        return {"exit_code": 0, "status": "dry-run", "stories": len(stories)}
+    if args.dry_run:
+        print(_success_msg(len(articles), stories, "dry-run"))
+        return 0
 
-    # ── Step 5: Send ─────────────────────────────────────────────────
-    if to_override and to_override.strip():
-        recipients = [r.strip() for r in to_override.split(",") if r.strip()]
+    # Step 5: Send
+    if args.to and args.to.strip():
+        recipients = [r.strip() for r in args.to.split(",") if r.strip()]
     else:
         recipients = list(config.recipients)
 
@@ -191,51 +372,25 @@ async def newsletter_pipeline(args_dict: dict[str, Any]) -> dict[str, Any]:
         week_range_label(window_days=config.fetch_window_days),
         config.issue_number,
     )
-    send_out = await send_email(config, recipients, subject, html_body, date_label, logger)
+    send_out = _step5_send(config, recipients, subject, html_body, date_label, logger)
 
     if not send_out["success"]:
-        tg(_fail_msg(send_out["detail"]))
-        return {"exit_code": 2, "error": send_out["detail"]}
+        print(_fail_msg(send_out["detail"]))
+        return 2
 
-    tg(_success_msg(len(articles), stories, send_out["detail"]))
-    print("\n--- Pipeline finished successfully ---")
-    return {"exit_code": 0, "status": "ok", "stories": len(stories)}
-
-
-# ── CLI | 命令行 ────────────────────────────────────────────────────
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="AI Weekly Digest — Agent Framework workflow")
-    parser.add_argument("--dry-run", action="store_true", help="Skip email sending")
-    parser.add_argument("--to", help="Override recipient email(s), comma-separated")
-    parser.add_argument("--stream", action="store_true", help="Stream workflow events to console")
-    return parser.parse_args()
+    print(_success_msg(len(articles), stories, send_out["detail"]))
+    return 0
 
 
 async def main() -> int:
     args = parse_args()
 
-    print("=" * 60)
-    print("  AI Weekly Digest — Agent Framework Workflow")
-    print("=" * 60)
-    print()
+    if args.cli:
+        return await run_cli(args)
 
-    args_dict = {"dry_run": args.dry_run, "to": args.to}
-
-    if args.stream:
-        # Stream mode: print events as they happen
-        # 流式模式：实时打印事件
-        result = await newsletter_pipeline.run(args_dict, stream=True)
-        async for event in result:
-            if event.type in ("executor_invoked", "executor_completed"):
-                print("  [event] %s: %s" % (event.type, event.executor_id))
-        output = result.get_outputs()[0]
-    else:
-        result = await newsletter_pipeline.run(args_dict)
-        output = result.get_outputs()[0]
-
-    print("\nResult: %s" % output)
-    return output.get("exit_code", 0)
+    # Default: HTTP server mode for Agent Inspector
+    await run_server()
+    return 0
 
 
 if __name__ == "__main__":
