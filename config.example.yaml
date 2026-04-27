@@ -14,15 +14,33 @@ llm:
   max_tokens: 8000
   timeout: 180
 
+  # ---- Dual-model (APIM) — optional ------------------------------------------
+  # When present, the pipeline uses primary → fallback with Ocp-Apim-Subscription-Key.
+  # Remove this section to use the single-model above (or pass --legacy at runtime).
+  primary:
+    endpoint: "https://YOUR-APIM.azure-api.net/grok/chat/completions"
+    model: "grok-4-20-reasoning"
+    subscription_key: "YOUR_PRIMARY_APIM_KEY"
+    temperature: 0.3
+    max_tokens: 16000
+    timeout: 300
+  fallback:
+    endpoint: "https://YOUR-APIM.azure-api.net/openai/deployments/gpt-54/chat/completions?api-version=2024-10-21"
+    model: "gpt-54"
+    subscription_key: "YOUR_FALLBACK_APIM_KEY"
+    temperature: 0.2
+    max_tokens: 8000
+    timeout: 180
+
 # ---- Email -------------------------------------------------------------------
 email:
   provider: "acs"                  # one of: acs | sendgrid | smtp
 
   recipients:
-    - "you@example.com"
+    - "user@example.com"
 
   # --- ACS (Azure Communication Services) ---
-  acs_sender: "DoNotReply@your-domain.azurecomm.net"
+  acs_sender: "user@example.com"
   acs_connection_string: "YOUR_ACS_CONNECTION_STRING"   # or env ACS_CONNECTION_STRING
 
   # --- SendGrid (alternative) ---
@@ -31,7 +49,7 @@ email:
   # --- SMTP (alternative; Office365, Gmail, etc.) ---
   # smtp_host: "smtp.office365.com"
   # smtp_port: 587
-  # smtp_user: "you@example.com"
+  # smtp_user: "user@example.com"
   # smtp_pass: "YOUR_SMTP_PASSWORD"
   # smtp_use_ssl: false
 
@@ -53,28 +71,3 @@ enrich:
 # ---- Cleanup -----------------------------------------------------------------
 cleanup:
   retention_days: 30
-
-# ---- RSS Feed Sources --------------------------------------------------------
-# Grouped by category. Each entry needs: name, url
-# Optional per-feed: max_items (int), skip_enrich (bool)
-feeds:
-  azure_microsoft:
-    - name: Azure Blog
-      url: https://azure.microsoft.com/en-us/blog/feed/
-    - name: Microsoft AI Blog
-      url: https://blogs.microsoft.com/ai/feed/
-    - name: GitHub Blog
-      url: https://github.blog/feed/
-
-  labs:
-    - name: OpenAI Blog
-      url: https://openai.com/news/rss.xml
-    - name: HuggingFace Blog
-      url: https://huggingface.co/blog/feed.xml
-
-  media:
-    - name: TechCrunch AI
-      url: https://techcrunch.com/category/artificial-intelligence/feed/
-
-  # Add more categories: competitor_cloud, newsletters, analysts, research,
-  # community, releases — see README for full list.

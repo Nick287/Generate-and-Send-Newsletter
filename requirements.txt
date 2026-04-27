@@ -5,8 +5,7 @@ readability-lxml==0.8.4.1
 requests==2.33.1
 pyyaml==6.0.3
 lxml==6.1.0
-python-dotenv>=1.0.0
-agent-framework>=1.2.0
+curl_cffi>=0.8
 
 # Email providers (install only what you need)
 azure-communication-email==1.1.0

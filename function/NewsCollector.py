@@ -268,12 +268,12 @@ class NewsCollector:
             raise ValueError("One or more required SMTP or recipient settings are missing.")
         recipients = [addr.strip() for addr in to_addrs_str.split(',') if addr.strip()]
 
-        # SENDER_USERNAME = os.getenv("SENDER_USERNAME", "your_email@example.com")
+        # SENDER_USERNAME = os.getenv("SENDER_USERNAME", "user@example.com")
         # SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "your_password") # It's recommended to use environment variables or a config file
         # SMTP_HOST = os.getenv("SMTP_HOST", "smtp.example.com")
         # SMTP_PORT = int(os.getenv("SMTP_PORT", 465)) # or 465 for SSL, 587 for TLS
     
-        # SENDER_USERNAME = "bo.wang@playpro.cn"
+        # SENDER_USERNAME = "user@example.com"
         # SENDER_PASSWORD = "" # It's recommended to use environment variables or a config file
         # SMTP_HOST = "smtp.qiye.aliyun.com"
         # SMTP_PORT = 465 # or 465 for SSL, 587 for TLS

@@ -27,7 +27,7 @@ competitor_cloud:
 
 labs:
   - name: OpenAI Blog
-    url: https://openai.com/news/rss.xml
+    url: https://openai.com/blog/rss.xml
   - name: Google DeepMind
     url: https://deepmind.google/blog/rss.xml
   - name: Google Research
@@ -54,12 +54,10 @@ media:
     url: https://venturebeat.com/category/ai/feed/
   - name: MarkTechPost
     url: https://www.marktechpost.com/feed/
-  - name: The Decoder
-    url: https://the-decoder.com/feed/
 
 newsletters:
   - name: TLDR AI
-    url: https://tldr.tech/api/rss/ai
+    url: https://tldr.tech/ai/rss
   - name: Import AI
     url: https://jack-clark.net/feed/
   - name: Latent Space
@@ -70,10 +68,6 @@ newsletters:
     url: https://buttondown.com/ainews/rss
   - name: Simon Willison
     url: https://simonwillison.net/atom/everything/
-  - name: Smol AI News
-    url: https://news.smol.ai/rss.xml
-  - name: Interconnects
-    url: https://www.interconnects.ai/feed
 
 analysts:
   - name: Stratechery
@@ -108,3 +102,18 @@ releases:
     url: https://github.com/open-webui/open-webui/releases.atom
   - name: Transformers
     url: https://github.com/huggingface/transformers/releases.atom
+
+wechat:
+  - name: 机器之心
+    url: https://wechat2rss.xlab.app/feed/51e92aad2728acdd1fda7314be32b16639353001.xml
+  - name: 量子位
+    url: https://wechat2rss.xlab.app/feed/7131b577c61365cb47e81000738c10d872685908.xml
+
+telegram_channels:
+  - name: TeaHub News
+    channel: teahubnews
+    keywords: ["AI", "LLM", "GPT", "Claude", "Gemini", "Azure", "OpenAI", "Anthropic", "DeepSeek", "model", "agent", "transformer", "GPU", "NVIDIA", "inference", "fine-tune", "RAG", "embedding"]
+    max_items: 15
+  - name: Lucius AI Commentary
+    channel: Lucius40k
+    max_items: 10

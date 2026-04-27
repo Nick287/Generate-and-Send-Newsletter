@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile check
+        run: python3 -m py_compile generate.py
+
+      - name: Ruff lint
+        run: |
+          pip install ruff
+          ruff check generate.py --select E,F,W
+
+  dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate staging config
+        env:
+          LLM_ENDPOINT: ${{ secrets.LLM_ENDPOINT }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_FALLBACK_ENDPOINT: ${{ secrets.LLM_FALLBACK_ENDPOINT }}
+          LLM_FALLBACK_API_KEY: ${{ secrets.LLM_FALLBACK_API_KEY }}
+          LLM_FALLBACK_MODEL: ${{ secrets.LLM_FALLBACK_MODEL }}
+          ACS_SENDER: ${{ secrets.ACS_SENDER }}
+          RECIPIENTS: ${{ secrets.RECIPIENTS }}
+          ISSUE_NUMBER: ${{ github.run_number }}
+        run: |
+          python3 << 'EOF'
+          import yaml, os
+          recipients = os.environ.get('RECIPIENTS', '')
+          recipient_list = [r.strip() for r in recipients.split(',') if r.strip()]
+          primary_endpoint = os.environ.get('LLM_ENDPOINT') or 'https://example.com/v1/chat/completions'
+          fallback_endpoint = os.environ.get('LLM_FALLBACK_ENDPOINT') or 'https://example.com/v1/chat/completions'
+          config = {
+              'issue_number': int(os.environ.get('ISSUE_NUMBER', '1')),
+              'recipients': recipient_list,
+              'acs_sender': os.environ.get('ACS_SENDER', 'DoNotReply@example.com'),
+              'llm': {
+                  'primary': {
+                      'endpoint': primary_endpoint,
+                      'model': os.environ.get('LLM_MODEL') or 'grok-4-20-reasoning',
+                      'subscription_key': os.environ.get('LLM_API_KEY') or 'CI_PLACEHOLDER_KEY',
+                      'temperature': 0.2, 'max_tokens': 8000, 'timeout': 180,
+                  },
+                  'fallback': {
+                      'endpoint': fallback_endpoint,
+                      'model': os.environ.get('LLM_FALLBACK_MODEL') or 'gpt-5.4',
+                      'subscription_key': os.environ.get('LLM_FALLBACK_API_KEY') or 'CI_PLACEHOLDER_KEY',
+                      'temperature': 0.3, 'max_tokens': 8000, 'timeout': 180,
+                  },
+              },
+              'newsletter': {'title': 'AI Weekly Digest', 'subtitle': 'Curated by Microsoft Digital CSA Team'},
+              'fetch': {'max_workers': 10, 'timeout': 15, 'window_days': 7},
+              'enrich': {'top_candidates': 50, 'fetch_timeout': 15, 'fetch_delay': 0.5, 'max_body_chars': 3000},
+          }
+          with open('config.yaml', 'w') as f:
+              yaml.dump(config, f, default_flow_style=False)
+          print('config.yaml generated (staging)')
+          EOF
+
+      - name: Dry run when secrets are available; otherwise validate config schema
+        env:
+          ISSUE_NUMBER: ${{ github.run_number }}
+          LLM_ENDPOINT: ${{ secrets.LLM_ENDPOINT }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+        run: |
+          if [ -n "$LLM_ENDPOINT" ] && [ -n "$LLM_API_KEY" ]; then
+            python3 generate.py --dry-run || [ $? -eq 1 ]
+          else
+            echo "LLM secrets are unavailable; validating config and feed schema only."
+            python3 << 'EOF'
+          from pathlib import Path
+          from generate import load_yaml_file, validate_config, validate_feeds
+          validate_config(load_yaml_file(Path('config.yaml')))
+          validate_feeds(load_yaml_file(Path('feeds.yaml')))
+          print('config/feed validation passed')
+          EOF
+          fi

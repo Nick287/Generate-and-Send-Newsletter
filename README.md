@@ -1,246 +1,123 @@
-# AI Weekly Digest
+# Generate-and-Send-Newsletter
 
-**Auto-fetch 40+ RSS feeds → LLM curation & scoring → Responsive HTML newsletter → Scheduled email delivery**
+**Auto-fetch AI news → AI curation & summarization → Generate newsletter email → Scheduled delivery**
 
 [中文文档](README_CN.md)
 
 ---
 
-## Overview
+This repo now ships **two pipelines** side-by-side. Pick the one that matches your needs:
 
-A fully automated AI newsletter pipeline that:
+| Pipeline | Entry point | Source | Best for |
+|---|---|---|---|
+| **Original (Nick's)** | `newsletter_git_action.py` | Single RSS feed → AI summary → SMTP | Simple daily digest from one source, fully driven by env vars / GitHub Actions |
+| **Enhanced v5 (this PR)** | `generate.py` | 40+ curated feeds → 6-stage curation → multi-provider email | Weekly curated digest with full LLM scoring + responsive HTML template |
 
-1. **Fetches** 40+ RSS/Atom feeds in parallel (Azure, AWS, GCP, OpenAI, Anthropic, research labs, media …)
-2. **Enriches** articles with full-text extraction + OG image scraping
-3. **Curates** via LLM — scores, tags, ranks, writes summaries
-4. **Composes** a responsive HTML email from a template
-5. **Sends** via SMTP / Azure Communication Services / SendGrid
-
-Two ways to run:
-
-| Mode | Entry point | Features |
-|---|---|---|
-| **Plain orchestrator** | `python run_pipeline.py` | Sequential 5-step pipeline, simple & debuggable |
-| **Agent Framework** | `python agent_run.py` | Per-step checkpointing, streaming, resume on failure |
+Everything from the original setup still works exactly as before. Read on for the enhanced pipeline.
 
 ---
 
-## Project Structure
+## Enhanced Pipeline (v5) — Overview
 
 ```
-.
-├── agent_run.py               # Agent Framework workflow entry point
-├── run_pipeline.py            # Plain pipeline orchestrator
-├── requirements.txt
-│
-├── config/
-│   ├── config.yaml            # Main config (gitignored)
-│   ├── config.example.yaml    # Template — copy to config.yaml
-│   └── feeds.yaml             # 40+ RSS feed sources (9 categories)
-│
-├── core/                      # Core library
-│   ├── models.py              # Dataclasses (Article, AppConfig, ...)
-│   ├── paths.py               # Path constants & helpers
-│   ├── constants.py           # Business constants (tags, patterns, ...)
-│   ├── config_loader.py       # ConfigLoader
-│   ├── llm_client.py          # LlmClient (OpenAI-compatible)
-│   ├── feed_fetcher.py        # FeedFetcher
-│   ├── article_enricher.py    # ArticleEnricher
-│   ├── content_curator.py     # ContentCurator
-│   ├── html_composer.py       # HtmlComposer
-│   ├── email_dispatcher.py    # EmailDispatcher
-│   └── utils/                 # Utility sub-package
-│       ├── logging.py         #   Logging & Telegram notification
-│       ├── text.py            #   HTML strip, truncate, escape
-│       ├── dates.py           #   Date/time helpers & parsing
-│       ├── articles.py        #   Dedup, save/load JSON
-│       ├── http.py            #   HTTP request with retry
-│       ├── images.py          #   Image URL validation
-│       ├── modules.py         #   Lazy module loaders
-│       └── cleanup.py         #   Old data file cleanup
-│
-├── steps/                     # Decoupled step functions
-│   ├── step0_config.py        # Load & validate config
-│   ├── step1_fetch.py         # Fetch RSS feeds
-│   ├── step2_enrich.py        # Pre-score & enrich articles
-│   ├── step3_curate.py        # LLM curation
-│   ├── step4_compose.py       # Compose HTML newsletter
-│   └── step5_send.py          # Send email
-│
-├── prompts/
-│   └── curate-v5.md           # LLM curation prompt (scoring rubric)
-├── templates/
-│   └── v7.html                # Responsive HTML email template
-│
-├── artifacts/                 # Intermediate data (gitignored)
-│   ├── fetched-YYYY-MM-DD.json
-│   ├── enriched-YYYY-MM-DD.json
-│   ├── curated-YYYY-MM-DD.json
-│   └── send-log.json
-├── dist/                      # Final output (gitignored)
-│   └── newsletter-YYYY-MM-DD.html
-│
-├── function/                  # Legacy modules (EmailSender used by SMTP)
-└── .github/workflows/
-    └── Generate-and-Send-Daily-AI-Newsletter.yaml
+┌─────────┐  ┌─────────┐  ┌──────────┐  ┌─────────┐  ┌──────┐  ┌────────┐
+│ Fetch   │→ │ Enrich  │→ │ Curate   │→ │ Compose │→ │ Send │→ │ Report │
+│ 40+ RSS │  │ Full    │  │ LLM      │  │ HTML    │  │ ACS/ │  │ Logs + │
+│ in para │  │ text +  │  │ scoring  │  │ email   │  │ SG/  │  │ TG     │
+│ -llel   │  │ OG img  │  │ + tags   │  │ template│  │ SMTP │  │ notify │
+└─────────┘  └─────────┘  └──────────┘  └─────────┘  └──────┘  └────────┘
 ```
+
+### Key features
+
+- **40+ RSS feeds** — Azure, AWS, GCP, NVIDIA, OpenAI / Anthropic / Google labs, AI media, analyst blogs (`feeds.yaml`)
+- **Full-text enrichment** — `trafilatura`-based article extraction + Open Graph image scraping
+- **LLM-powered curation** — DCSA-focused scoring rubric (`prompts/curate-v5.md`); works with any OpenAI-compatible endpoint
+- **Responsive HTML template** — `templates/v7.html`; uses `dir=rtl` sidebar trick so desktop renders the sidebar on the right and mobile collapses it on top
+- **Multi-provider email** — `acs` (Azure Communication Services), `sendgrid`, or `smtp`, picked from `config.yaml`
+- **Production-grade stability** — per-feed error isolation, LLM retry with backoff, image fallbacks (`placehold.co`), idempotent runs
+- **Optional progress notifier** — set `TG_NOTIFY_SCRIPT` to ping Telegram / Slack on milestones
 
 ---
 
-## Quick Start
-
-### 1. Install dependencies
+## Quick start (enhanced pipeline)
 
 ```bash
+# 1. Install deps
 pip install -r requirements.txt
+
+# 2. Copy example config and fill in your keys
+cp config.example.yaml config.yaml
+$EDITOR config.yaml          # set llm.api_key, email.provider, recipients, etc.
+
+# 3. Dry-run to make sure it composes the email without sending
+python3 generate.py --dry-run
+
+# 4. Full run + send
+python3 generate.py
+# or
+./run.sh
 ```
 
-### 2. Configure
+`config.yaml` is gitignored — never commit it.
+
+### Useful flags
 
 ```bash
-cp config/config.example.yaml config/config.yaml
+python3 generate.py --dry-run            # build HTML, don't send
+python3 generate.py --fetch-only         # stop after fetch stage (debug feeds)
+python3 generate.py --to user@example.com,user@example.com # override recipients
 ```
 
-Edit `config/config.yaml` — at minimum set:
-
-```yaml
-llm:
-  api_key: "sk-..."           # or set env LLM_API_KEY / OPENAI_API_KEY
-  model: "gpt-4o"
-
-email:
-  provider: "smtp"             # acs | sendgrid | smtp
-  recipients:
-    - "you@example.com"
-  smtp_host: "smtp.example.com"
-  smtp_port: 587
-  smtp_user: "you@example.com"
-  smtp_pass: "..."
-```
-
-### 3. Run
-
-```bash
-# Plain orchestrator
-python run_pipeline.py --dry-run        # compose without sending
-python run_pipeline.py                  # full run
-
-# Agent Framework (with checkpointing)
-python agent_run.py --dry-run
-python agent_run.py
-python agent_run.py --stream            # watch events in real time
-```
-
----
-
-## Running with Agent Framework
-
-`agent_run.py` uses [Microsoft Agent Framework](https://pypi.org/project/agent-framework/) to model each pipeline step as an independent `Executor` node, connected via `WorkflowBuilder.add_edge()` into a directed workflow graph:
-
-![Workflow Visualizer](image/workflow.png)
-
-### Why a Multi-Executor Workflow?
-
-A traditional script runs all steps inside a single function — if something fails halfway, you restart from scratch. By decomposing the pipeline into **6 independent executor nodes**, we get:
-
-| Advantage | Description |
-|---|---|
-| **Visual Observability** | Each node appears in the [Microsoft Foundry Visualizer](https://marketplace.visualstudio.com/items?itemName=ms-windows-ai-studio.windows-ai-studio) — you can watch the execution flow in real time |
-| **Fault Isolation** | If Step 3 (LLM curation) fails, Steps 0–2 results are preserved; you don't re-fetch or re-enrich |
-| **Checkpointing** | The framework automatically checkpoints completed nodes — resume from the last successful step on retry |
-| **Streaming Events** | Built-in `executor_invoked` / `executor_completed` events let you monitor progress without custom logging |
-| **Extensibility** | Add a new step (e.g., "translate", "summarize to Slack") by adding one `Executor` class and one `.add_edge()` call |
-| **Production-ready** | Swap `InMemoryCheckpointStorage` → `CosmosCheckpointStorage` for durable distributed state |
-
-### Workflow Graph
-
-```
-ConfigLoader → FeedFetcher → ArticleEnricher → StoryCurator → HtmlComposer → EmailSender
-```
-
-Each node passes a shared `PipelineState` dataclass downstream. The Visualizer shows which node is active, completed, or failed.
-
-### Usage
-
-```bash
-# HTTP Server mode (for Agent Inspector / Visualizer)
-python agent_run.py
-
-# CLI mode
-python agent_run.py --cli --dry-run        # skip email send
-python agent_run.py --cli                  # full run
-python agent_run.py --cli --to a@x.com     # override recipients
-```
-
-### Visualizer Setup
-
-1. Install the [Microsoft Foundry for VS Code](https://marketplace.visualstudio.com/items?itemName=ms-windows-ai-studio.windows-ai-studio) extension
-2. Open Command Palette (`Ctrl+Shift+P`) → `Microsoft Foundry: Open Visualizer for Hosted Agents`
-3. Run your agent — the graph updates in real time
-
----
-
-## CLI Reference
-
-### `run_pipeline.py`
-
-```bash
-python run_pipeline.py                      # full pipeline
-python run_pipeline.py --dry-run            # skip email send
-python run_pipeline.py --fetch-only         # stop after fetch + enrich
-python run_pipeline.py --compose-only       # re-compose from latest curated artifact
-python run_pipeline.py --to a@x.com,b@y.com # override recipients
-```
-
-### `agent_run.py`
-
-```bash
-python agent_run.py                         # full pipeline with checkpointing
-python agent_run.py --dry-run               # skip email send
-python agent_run.py --to a@x.com            # override recipients
-python agent_run.py --stream                # stream step events
-```
+Outputs:
+- `output/<date>/newsletter.html` — final HTML
+- `data/fetched.json`, `data/curated.json` — pipeline artifacts
+- `data/send-log.json` — delivery audit log
 
 ---
 
 ## Configuring `config.yaml`
 
-See [`config/config.example.yaml`](config/config.example.yaml) for the full schema.
+See `config.example.yaml` for the full schema. The most important sections:
 
 ### LLM
 
 ```yaml
 llm:
   endpoint: "https://api.openai.com/v1/chat/completions"
-  api_key: "sk-..."
+  api_key: "YOUR_OPENAI_API_KEY"        # or set env LLM_API_KEY / OPENAI_API_KEY
   model: "gpt-4o"
 ```
 
-Any OpenAI-compatible endpoint works (OpenAI, Azure OpenAI, vLLM, LiteLLM, Ollama, etc.).
+Any OpenAI-compatible Chat Completions endpoint works (OpenAI, Azure OpenAI proxy, vLLM, LiteLLM, Ollama with the OpenAI shim, Claude via `anthropic-openai`, etc.).
 
 ### Email — pick a provider
 
 ```yaml
 email:
-  provider: "smtp"              # acs | sendgrid | smtp
-  recipients: ["team@co.com"]
+  provider: "acs"          # acs | sendgrid | smtp
+  recipients:
+    - "user@example.com"
 
-  # SMTP
-  smtp_host: "smtp.office365.com"
-  smtp_port: 587
-  smtp_user: "you@example.com"
-  smtp_pass: "..."
-
-  # ACS (alternative)
-  # acs_sender: "DoNotReply@xxx.azurecomm.net"
-  # acs_connection_string: "endpoint=https://..."
+  # ACS
+  acs_sender: "user@example.com"
+  acs_connection_string: "endpoint=https://...;accesskey=YOUR_ACCESS_KEY"
 
   # SendGrid (alternative)
   # sendgrid_api_key: "SG.xxxx"
+
+  # SMTP (alternative)
+  # smtp_host: "smtp.office365.com"
+  # smtp_port: 587
+  # smtp_user: "user@example.com"
+  # smtp_pass: "..."
 ```
 
-Secrets can also be set via environment variables:
-`LLM_API_KEY`, `OPENAI_API_KEY`, `ACS_CONNECTION_STRING`, `SENDGRID_API_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `TO_ADDRS`
+You can also pass secrets via env vars instead of `config.yaml`:
+- `ACS_CONNECTION_STRING`
+- `SENDGRID_API_KEY`
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`
+- `LLM_API_KEY` / `OPENAI_API_KEY`
 
 ---
 
@@ -248,44 +125,120 @@ Secrets can also be set via environment variables:
 
 | What | Where |
 |---|---|
-| Add / remove RSS feeds | `config/feeds.yaml` |
-| Change scoring rubric / tone | `prompts/curate-v5.md` |
-| Change visual layout | `templates/v7.html` |
-| Change LLM model / temperature | `config/config.yaml` → `llm:` |
-| Change look-back window | `config/config.yaml` → `fetch:` |
+| Add / remove RSS feeds | `feeds.yaml` (grouped by category) |
+| Change scoring rubric / categories / tone | `prompts/curate-v5.md` |
+| Change visual layout | `templates/v7.html` (table-based, email-client-safe) |
+| Change LLM model / temperature / max_tokens | `config.yaml` → `llm:` |
+| Change look-back window / feed concurrency | `config.yaml` → `fetch:` |
 
 ---
 
-## GitHub Actions (Daily Automated Run)
+## Scheduling
 
-The workflow at `.github/workflows/Generate-and-Send-Daily-AI-Newsletter.yaml` runs the pipeline daily at **UTC 08:00** and can also be triggered manually.
+### cron (server / VM)
 
-### Setup
+```cron
+# Every Monday 09:00 local time
+0 9 * * 1  cd /path/to/Generate-and-Send-Newsletter && ./run.sh >> run.log 2>&1
+```
 
-1. Go to repo **Settings → Secrets and variables → Actions**
-2. Add the secrets and variables listed below
-3. The workflow runs `python agent_run.py` with config materialized from `NEWSLETTER_CONFIG` secret
+### GitHub Actions
 
-### Required Secrets
+Nick's existing workflow at `.github/workflows/Generate-and-Send-Daily-AI-Newsletter.yaml` continues to run the **original** pipeline. To schedule the **enhanced** one, add a second workflow that:
 
-| Secret | Description |
-|---|---|
-| `NEWSLETTER_CONFIG` | Full `config/config.yaml` content |
-| `LLM_API_KEY` | LLM API key (overrides config) |
+1. Writes `config.yaml` from a repo secret (e.g. `NEWSLETTER_CONFIG`)
+2. Runs `python generate.py`
 
-### Optional Variables (for env-var based config)
+Example fragment:
 
-| Variable | Description |
-|---|---|
-| `SMTP_HOST` | SMTP server (e.g. `smtp.office365.com`) |
-| `SMTP_PORT` | SMTP port (e.g. `587`) |
-| `SMTP_USER` | Sender email |
-| `SMTP_PASS` | SMTP password |
-| `TO_ADDRS` | Recipients (comma-separated) |
-| `FROM_ALIAS` | Sender display name |
+```yaml
+- name: Materialize config
+  run: 'echo "$NEWSLETTER_CONFIG" > config.yaml'
+  env:
+    NEWSLETTER_CONFIG: ${{ secrets.NEWSLETTER_CONFIG }}
+
+- name: Generate + send
+  run: python generate.py
+```
+
+---
+
+## File layout
+
+```
+.
+├── generate.py                # ★ Enhanced v5 pipeline (this PR)
+├── feeds.yaml                 # ★ 40+ curated feeds
+├── config.example.yaml        # ★ Copy → config.yaml
+├── prompts/
+│   └── curate-v5.md           # ★ DCSA scoring rubric prompt
+├── templates/
+│   └── v7.html                # ★ Responsive email template
+├── run.sh                     # ★ Wrapper (loads .env / venv)
+│
+├── newsletter_git_action.py   # Original pipeline (Nick) — unchanged
+├── function/                  # Original pipeline modules — unchanged
+├── NewsTemplate/              # Original template — unchanged
+└── .github/workflows/         # Original GitHub Actions workflow — unchanged
+```
+
+---
+
+## Original pipeline
+
+The original simple-RSS / SMTP pipeline is fully preserved. Its setup instructions are below for completeness.
+
+### Quick start (original)
+
+```bash
+pip install -r requirements.txt
+# Set env vars (see .env example below)
+python newsletter_git_action.py
+```
+
+### Required env vars (original)
+
+```env
+AZURE_OPENAI_TOKEN=your_azure_openai_api_key
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+RSS_URL=https://your-rss-feed-url.com/rss.xml
+SMTP_HOST=smtp.example.com
+SMTP_PORT=465
+SENDER_USERNAME=user@example.com
+SENDER_PASSWORD=your_email_password
+TO_ADDRS=user@example.com,user@example.com
+FROM_ALIAS=AI Newsletter
+```
+
+GitHub Actions workflow: `.github/workflows/Generate-and-Send-Daily-AI-Newsletter.yaml`.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see `LICENSE`.
+
+## GitHub Actions Setup
+
+### Required Secrets
+
+Go to repo **Settings → Secrets and variables → Actions → New repository secret** and add:
+
+| Secret | Value | Example |
+|--------|-------|---------|
+| `LLM_ENDPOINT` | Primary LLM API endpoint | `https://your-apim.azure-api.net/grok/chat/completions` |
+| `LLM_API_KEY` | Primary LLM subscription key | APIM subscription key |
+| `LLM_MODEL` | Primary model name | `grok-4-20-reasoning` |
+| `LLM_FALLBACK_ENDPOINT` | Fallback LLM endpoint | `https://your-apim.azure-api.net/openai/deployments/gpt-54/chat/completions?api-version=2024-10-21` |
+| `LLM_FALLBACK_API_KEY` | Fallback subscription key | APIM subscription key |
+| `LLM_FALLBACK_MODEL` | Fallback model name | `gpt-54` |
+| `ACS_CONNECTION_STRING` | Azure Communication Services connection string | `endpoint=https://...;accesskey=YOUR_ACCESS_KEY` |
+| `ACS_SENDER` | ACS sender email address | `user@example.com` |
+| `RECIPIENTS` | Recipient email address | `user@example.com` |
+
+### Schedule
+- Runs every **Tuesday at 09:00 HKT** (01:00 UTC)
+- Can also be triggered manually from Actions tab → "Run workflow"
+
+### Artifacts
+Each run saves the generated newsletter HTML as a downloadable artifact (retained 30 days).
