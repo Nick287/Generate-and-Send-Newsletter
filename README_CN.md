@@ -308,6 +308,24 @@ email:
 
 ---
 
+## 安全与运维
+
+本仓库**公开可读**。所有代码视为公共安全内容，运行时配置必须保密。
+
+- **公开**：源代码、文档、示例配置（`*.example.yaml`、`.env.example`）。
+- **保密（绝不入库）**：`.env`、`config/config.yaml`、邮箱密码、Azure OpenAI key、ACS 连接串、真实收件人、生成的中间产物。仓库的 `.gitignore` 已默认拦截，CI 也会调用 `scripts/secret-scan-public.sh` 二次校验，本地也可运行：
+
+  ```bash
+  bash scripts/secret-scan-public.sh
+  ```
+
+- **CI (`.github/workflows/ci.yml`)** 在所有 push / PR 触发，使用 `permissions: contents: read`，**不依赖任何 secret**，只做 lint、语法、import 和 `--help` 冒烟，绝不真实发送邮件。
+- **每日发送 workflow** 已加固：`permissions: contents: read`、`concurrency`、`persist-credentials: false`、3 十分钟超时，并为手动 `workflow_dispatch` 提供 `dry_run=true` 选项以供安全演练。**强烈建议** 将该 workflow 绑定到名为 `production-send` 的受保护环境：`Generate-and-Send-Daily-AI-Newsletter.yaml` 中该行以注释形式保留，仓库所有者需在 *Settings → Environments* 创建该 environment 后取消注释，以免当前 cron 中断。
+- **Fork 与 PR**：从 fork 分支提交 PR，PR CI 必须保持绿色且不依赖 secret。任何改动 schedule 发送 workflow 的 PR 都需维护者评审。
+- **漏洞上报**：参见 [SECURITY.md](SECURITY.md)。
+
+---
+
 ## 许可证
 
 MIT — 详见 [LICENSE](LICENSE)。
