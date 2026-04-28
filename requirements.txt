@@ -8,7 +8,11 @@ lxml==6.1.0
 python-dotenv>=1.0.0
 pydantic>=2.0
 agent-framework>=1.2.0
-azure-ai-agentserver-agentframework>=1.0.0b16
+
+# HTTP server mode (optional — only for local Agent Inspector / Playground)
+# Has version conflict with agent-framework>=1.2.0 on PyPI as of 2026-04
+# Install manually: pip install azure-ai-agentserver-agentframework --pre
+# azure-ai-agentserver-agentframework>=1.0.0b16
 
 # Observability (optional — only needed for local Visualizer / DevUI tracing)
 # opentelemetry-exporter-otlp-proto-grpc
