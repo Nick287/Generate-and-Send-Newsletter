@@ -47,10 +47,15 @@ from pydantic import BaseModel, Field
 # Enable multi-agent visualization in VS Code Microsoft Foundry extension
 # 启用 VS Code Microsoft Foundry 扩展的多 Agent 可视化
 # OTLP gRPC endpoint: http://localhost:4319
-configure_otel_providers(
-    vs_code_extension_port=4319,
-    enable_sensitive_data=True,
-)
+# Gracefully skipped in CI where opentelemetry-exporter-otlp-proto-grpc is not installed
+# 在 CI 环境中若未安装 opentelemetry 导出器则静默跳过
+try:
+    configure_otel_providers(
+        vs_code_extension_port=4319,
+        enable_sensitive_data=True,
+    )
+except ImportError:
+    pass
 
 from core.utils import (
     log_event,
