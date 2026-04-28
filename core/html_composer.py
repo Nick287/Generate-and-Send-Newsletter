@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from core.models import AppConfig, Article
-from core.paths import DATA_DIR, OUTPUT_DIR, TEMPLATES_DIR, TMP_HTML_FILE
+from core.paths import DATA_DIR, OUTPUT_DIR, TEMPLATES_DIR, TMP_HTML_FILE, template_path
 from core.constants import TAG_PLACEHOLDER_COLORS
 from core.utils import (
     escape_html,
@@ -58,8 +58,9 @@ class HtmlComposer:
         Populates C1–C8 cards, Q1–Q5 quick reads, S1–S10 sidebar. | 填充C1-C8卡片、Q1-Q5快速阅读、S1-S10侧边栏。
         """
         print("--- Step: Composing newsletter HTML ---")
-        template_path = TEMPLATES_DIR / "v7.html"
-        template = template_path.read_text(encoding="utf-8")
+        version = getattr(self.config, "template_version", None)
+        tmpl = template_path(version) if version else (TEMPLATES_DIR / "v7.html")
+        template = tmpl.read_text(encoding="utf-8")
 
         source_count = len({article.source_name for article in scanned_articles})
         scanned_count = len(scanned_articles)

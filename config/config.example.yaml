@@ -53,3 +53,12 @@ enrich:
 # ---- Cleanup -----------------------------------------------------------------
 cleanup:
   retention_days: 30
+
+# ---- Template / prompt versioning (optional) ---------------------------------
+# Defaults preserve current behavior (template v7 + curate prompt v5).
+# Override here, or via env vars NEWSLETTER_TEMPLATE_VERSION / CURATE_PROMPT_VERSION.
+# Versions must match pattern "v<digits>" (e.g. v5, v7); other values are rejected.
+# template:
+#   version: "v7"
+# llm:
+#   curate_prompt_version: "v5"

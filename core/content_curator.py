@@ -22,7 +22,7 @@ import re
 from typing import Any, Optional
 
 from core.models import AppConfig, Article
-from core.paths import CURATE_PROMPT_FILE
+from core.paths import CURATE_PROMPT_FILE, curate_prompt_path
 from core.constants import VALID_TAGS
 from core.llm_client import LlmClient
 from core.utils import (
@@ -36,8 +36,9 @@ from core.utils import (
 
 # re-use curated_path from utils (it's a path helper)
 # but curate_prompt_text is curate-specific
-def _curate_prompt_text() -> str:
-    content = CURATE_PROMPT_FILE.read_text(encoding="utf-8").strip()
+def _curate_prompt_text(version: str | None = None) -> str:
+    path = curate_prompt_path(version) if version else CURATE_PROMPT_FILE
+    content = path.read_text(encoding="utf-8").strip()
     if not content:
         raise RuntimeError("curate prompt file is empty")
     return content
@@ -62,7 +63,7 @@ class ContentCurator:
         Returns (curated_stories, critical_failure_flag). | 返回 (筛选故事, 严重失败标志)。
         """
         print("--- Step: Curating stories with LLM ---")
-        prompt_text = _curate_prompt_text()
+        prompt_text = _curate_prompt_text(getattr(self.config, "curate_prompt_version", None))
         payload = []
         for article in articles:
             payload.append(
