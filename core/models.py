@@ -57,6 +57,8 @@ class AppConfig:
     llm_fallback_api_key: str = ""
     llm_fallback_model: str = ""
     from_alias: str = ""
+    template_version: str = "v7"
+    curate_prompt_version: str = "v5"
 
 
 @dataclass
