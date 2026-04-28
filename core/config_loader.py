@@ -30,7 +30,7 @@ from core.paths import (
     curate_prompt_path,
     template_path,
 )
-from core.utils import log_event
+from core.utils import log_event, mask_recipients
 
 
 class ConfigLoader:
@@ -57,7 +57,8 @@ class ConfigLoader:
             logging.INFO,
             "config_loaded",
             feed_count=len(feeds),
-            recipients=config.recipients,
+            recipients_count=len(config.recipients),
+            recipients_masked=mask_recipients(config.recipients),
             llm_endpoint=config.llm_endpoint,
         )
         print("    Loaded %d feeds, %d recipients" % (len(feeds), len(config.recipients)))
