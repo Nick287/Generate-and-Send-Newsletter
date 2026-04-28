@@ -117,7 +117,7 @@ def full_pipeline(args: argparse.Namespace) -> int:
     llm_failed = curate_out["llm_failed"]
 
     # ── Step 4: Compose ──────────────────────────────────────────────────────
-    compose_out = step4_compose(config, stories, articles, date_label, logger)
+    compose_out = step4_compose(config, stories, articles, date_label, logger, meta=curate_out.get("meta"))
     html_body = compose_out["html_body"]
 
     if args.fetch_only:
@@ -135,9 +135,8 @@ def full_pipeline(args: argparse.Namespace) -> int:
 
     # ── Step 5: Send ─────────────────────────────────────────────────────────
     recipients = resolve_recipients(args.to, config)
-    subject = "🤖 AI Weekly Digest — Week of %s [Issue #%s]" % (
+    subject = "AI Weekly Digest — Week of %s" % (
         week_range_label(window_days=config.fetch_window_days),
-        config.issue_number,
     )
     send_out = step5_send(config, recipients, subject, html_body, date_label, logger)
 

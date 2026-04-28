@@ -87,6 +87,7 @@ class PipelineState:
     logger: Any = None
     articles: list = field(default_factory=list)
     stories: list = field(default_factory=list)
+    curate_meta: dict = field(default_factory=dict)
     html_body: str = ""
     dry_run: bool = False
     to_override: str | None = None
@@ -211,6 +212,7 @@ class StoryCurator(Executor):
             _step3_curate, data.config, data.articles, data.date_label, data.logger
         )
         data.stories = curate_out["stories"]
+        data.curate_meta = curate_out.get("meta", {}) or {}
 
         await ctx.yield_output(AgentResponseUpdate(
             contents=[Content("text", text="🤖 Curated %d stories" % len(data.stories))],
@@ -231,7 +233,7 @@ class HtmlComposer(Executor):
         ))
 
         compose_out = await asyncio.to_thread(
-            _step4_compose, data.config, data.stories, data.articles, data.date_label, data.logger
+            _step4_compose, data.config, data.stories, data.articles, data.date_label, data.logger, data.curate_meta
         )
         data.html_body = compose_out["html_body"]
 
@@ -262,9 +264,8 @@ class EmailSender(Executor):
         else:
             recipients = list(data.config.recipients)
 
-        subject = "🤖 AI Weekly Digest — Week of %s [Issue #%s]" % (
+        subject = "AI Weekly Digest — Week of %s" % (
             week_range_label(window_days=data.config.fetch_window_days),
-            data.config.issue_number,
         )
 
         send_out = await asyncio.to_thread(
@@ -361,9 +362,10 @@ async def run_cli(args: argparse.Namespace) -> int:
     # Step 3: Curate
     curate_out = _step3_curate(config, enrich_out["articles"], date_label, logger)
     stories = curate_out["stories"]
+    curate_meta = curate_out.get("meta", {}) or {}
 
     # Step 4: Compose
-    compose_out = _step4_compose(config, stories, articles, date_label, logger)
+    compose_out = _step4_compose(config, stories, articles, date_label, logger, meta=curate_meta)
     html_body = compose_out["html_body"]
 
     if args.dry_run:
@@ -376,9 +378,8 @@ async def run_cli(args: argparse.Namespace) -> int:
     else:
         recipients = list(config.recipients)
 
-    subject = "🤖 AI Weekly Digest — Week of %s [Issue #%s]" % (
+    subject = "AI Weekly Digest — Week of %s" % (
         week_range_label(window_days=config.fetch_window_days),
-        config.issue_number,
     )
     send_out = _step5_send(config, recipients, subject, html_body, date_label, logger)
 

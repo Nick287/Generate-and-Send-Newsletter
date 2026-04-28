@@ -45,6 +45,7 @@ def run(
     scanned_articles: list[Article],
     date_label: str,
     logger: logging.Logger,
+    meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Compose newsletter HTML and write output files.
@@ -64,6 +65,7 @@ def run(
         stories,
         scanned_articles,
         week_range_label(window_days=config.fetch_window_days),
+        meta=meta or {},
     )
     composer.write_outputs(date_label, html_body, logger)
 
@@ -95,7 +97,7 @@ def main() -> int:
     curate_result = curate(ctx["config"], enrich_result["articles"], ctx["date_label"], ctx["logger"])
     result = run(
         ctx["config"], curate_result["stories"], fetch_result["articles"],
-        ctx["date_label"], ctx["logger"],
+        ctx["date_label"], ctx["logger"], meta=curate_result.get("meta"),
     )
     print("\n✅ HTML composed: %s" % result["output_path"])
     return 0

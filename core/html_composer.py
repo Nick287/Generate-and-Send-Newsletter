@@ -33,6 +33,15 @@ from core.utils import (
 )
 
 
+_AZ_BADGE_COLORS = {
+    "GA": "059669",
+    "PREVIEW": "D97706",
+    "UPDATE": "0078D4",
+    "NEW": "DC2626",
+    "AZURE": "0078D4",
+}
+
+
 class HtmlComposer:
     """Composes the newsletter HTML by filling the v7 template with curated story data.
     通过将筛选故事数据填充到v7模板中来组合新闻简报HTML。
@@ -52,15 +61,28 @@ class HtmlComposer:
         stories: list[dict[str, Any]],
         scanned_articles: list[Article],
         date_range: str,
+        meta: Optional[dict[str, Any]] = None,
     ) -> str:
         """Take curated stories + all scanned articles and return filled HTML.
         接收筛选故事+所有扫描文章，返回填充完成的HTML。
         Populates C1–C8 cards, Q1–Q5 quick reads, S1–S10 sidebar. | 填充C1-C8卡片、Q1-Q5快速阅读、S1-S10侧边栏。
         """
         print("--- Step: Composing newsletter HTML ---")
-        version = getattr(self.config, "template_version", None)
+        version = getattr(self.config, "template_version", None) or "v7"
         tmpl = template_path(version) if version else (TEMPLATES_DIR / "v7.html")
         template = tmpl.read_text(encoding="utf-8")
+
+        if version == "v8":
+            return self._compose_v8(template, stories, scanned_articles, date_range, meta or {})
+        return self._compose_v7(template, stories, scanned_articles, date_range)
+
+    def _compose_v7(
+        self,
+        template: str,
+        stories: list[dict[str, Any]],
+        scanned_articles: list[Article],
+        date_range: str,
+    ) -> str:
 
         source_count = len({article.source_name for article in scanned_articles})
         scanned_count = len(scanned_articles)
@@ -110,6 +132,144 @@ class HtmlComposer:
               % (selected_count, source_count, scanned_count))
         return result
 
+    # ── v8 renderer | v8 渲染 ────────────────────────────────────────────
+    def _compose_v8(
+        self,
+        template: str,
+        stories: list[dict[str, Any]],
+        scanned_articles: list[Article],
+        date_range: str,
+        meta: dict[str, Any],
+    ) -> str:
+        """Render the v8 'Bloomberg-style' newsletter template.
+        渲染 v8 “Bloomberg 风” 模板。
+
+        Layout: top bar (issue + date), hero zone (TL;DR + headline + hero image),
+        6 featured cards in 2 rows, quick reads, Azure sidebar, footer.
+        Missing fields fall back to safe defaults to avoid unresolved placeholders.
+        布局：顶部 issue/日期、hero 区（TL;DR + 头条 + 头图）、6 张精选卡㄀2 行、
+        快读、Azure 侧边栏、页脚。缺失字段使用安全默认值避免未解析占位符。
+        """
+        source_count = len({article.source_name for article in scanned_articles})
+        scanned_count = len(scanned_articles)
+        selected_count = len(stories)
+
+        result = template
+
+        # Top bar | 顶栏
+        issue_number = getattr(self.config, "issue_number", 1)
+        result = result.replace("{{ISSUE_NUMBER}}", escape_html(str(issue_number)))
+        result = result.replace("{{ISSUE_DATE}}", escape_html(date_range))
+
+        # Hero zone | hero 区
+        hero_idx_raw = meta.get("hero_image_index", 0)
+        try:
+            hero_idx = int(hero_idx_raw)
+        except (TypeError, ValueError):
+            hero_idx = 0
+        if hero_idx < 0 or hero_idx >= len(stories):
+            hero_idx = 0
+        hero_story = stories[hero_idx] if stories else {}
+
+        headline_text = meta.get("headline") or hero_story.get("title") or "AI Weekly Digest"
+        tldr_text = meta.get("tldr") or hero_story.get("oneliner") or hero_story.get("summary") or ""
+
+        result = result.replace("{{HERO_TITLE}}", escape_html(str(headline_text)))
+        result = result.replace("{{TLDR}}", escape_html(str(tldr_text)))
+        result = result.replace("{{ARTICLE_COUNT}}", str(scanned_count))
+        result = result.replace("{{SOURCE_COUNT}}", str(source_count))
+        result = result.replace("{{STORY_COUNT}}", str(selected_count))
+        result = result.replace("{{HERO_LINK}}", escape_html(hero_story.get("link") or "#"))
+        result = result.replace(
+            "{{HERO_IMAGE}}",
+            escape_html(self._get_image_or_placeholder(hero_story) if hero_story else ""),
+        )
+        result = result.replace("{{HERO_IMG_TITLE}}", escape_html(truncate_text(hero_story.get("title", ""), 80)))
+        result = result.replace("{{HERO_IMG_SOURCE}}", escape_html(hero_story.get("source", "")))
+        result = result.replace(
+            "{{HERO_IMG_DATE}}",
+            escape_html(self._format_sidebar_date(hero_story.get("published_date")) or date_range),
+        )
+
+        # 6 featured cards C1..C6 | 精选卡片
+        # Skip the hero story when filling cards so the hero image isn't duplicated.
+        # 跳过作为 hero 的那条，避免与顶部重复。
+        card_pool = [s for i, s in enumerate(stories) if i != hero_idx]
+        for i in range(6):
+            prefix = "C%d" % (i + 1)
+            if i < len(card_pool):
+                story = card_pool[i]
+                tag_upper = (story.get("tag") or "QUICK").upper()
+                tag_color = "#" + TAG_PLACEHOLDER_COLORS.get(tag_upper, "6B7280")
+                result = result.replace("{{%s_LINK}}" % prefix, escape_html(story.get("link", "#")))
+                result = result.replace(
+                    "{{%s_IMAGE}}" % prefix, escape_html(self._get_image_or_placeholder(story))
+                )
+                result = result.replace("{{%s_TAG}}" % prefix, escape_html(tag_upper))
+                result = result.replace("{{%s_TAG_COLOR}}" % prefix, tag_color)
+                result = result.replace("{{%s_TITLE}}" % prefix, escape_html(story.get("title", "")))
+                result = result.replace(
+                    "{{%s_DATE}}" % prefix,
+                    escape_html(self._format_sidebar_date(story.get("published_date")) or date_range),
+                )
+                result = result.replace(
+                    "{{%s_TIME}}" % prefix, str(story.get("read_time_minutes", 3))
+                )
+            else:
+                result = result.replace("{{%s_LINK}}" % prefix, "#")
+                result = result.replace("{{%s_IMAGE}}" % prefix, "")
+                result = result.replace("{{%s_TAG}}" % prefix, "")
+                result = result.replace("{{%s_TAG_COLOR}}" % prefix, "#6B7280")
+                result = result.replace("{{%s_TITLE}}" % prefix, "")
+                result = result.replace("{{%s_DATE}}" % prefix, "")
+                result = result.replace("{{%s_TIME}}" % prefix, "")
+
+        # Quick reads QR1..QR3 from remaining stories | 快读
+        quick_pool = card_pool[6:]
+        for i in range(3):
+            prefix = "QR%d" % (i + 1)
+            if i < len(quick_pool):
+                story = quick_pool[i]
+                result = result.replace("{{%s_LINK}}" % prefix, escape_html(story.get("link", "#")))
+                result = result.replace("{{%s_TITLE}}" % prefix, escape_html(story.get("title", "")))
+                result = result.replace(
+                    "{{%s_DATE}}" % prefix,
+                    escape_html(self._format_sidebar_date(story.get("published_date")) or ""),
+                )
+            else:
+                result = result.replace("{{%s_LINK}}" % prefix, "#")
+                result = result.replace("{{%s_TITLE}}" % prefix, "")
+                result = result.replace("{{%s_DATE}}" % prefix, "")
+
+        # Azure sidebar AZ1..AZ6 | Azure 侧边栏
+        sidebar_items = self._extract_azure_sidebar(scanned_articles, max_items=6)
+        for i in range(6):
+            prefix = "AZ%d" % (i + 1)
+            if i < len(sidebar_items):
+                item = sidebar_items[i]
+                badge = (item.get("badge") or "AZURE").upper()
+                badge_color = "#" + _AZ_BADGE_COLORS.get(badge, "0078D4")
+                result = result.replace("{{%s_BADGE}}" % prefix, escape_html(badge))
+                result = result.replace("{{%s_BADGE_COLOR}}" % prefix, badge_color)
+                result = result.replace("{{%s_LINK}}" % prefix, escape_html(item["link"]))
+                result = result.replace("{{%s_TITLE}}" % prefix, escape_html(item["title"]))
+                result = result.replace("{{%s_DATE}}" % prefix, escape_html(item["date"]))
+            else:
+                result = result.replace("{{%s_BADGE}}" % prefix, "")
+                result = result.replace("{{%s_BADGE_COLOR}}" % prefix, "#0078D4")
+                result = result.replace("{{%s_LINK}}" % prefix, "#")
+                result = result.replace("{{%s_TITLE}}" % prefix, "")
+                result = result.replace("{{%s_DATE}}" % prefix, "")
+
+        # Strip empty img tags to avoid broken image icons | 清理空 img
+        result = re.sub(r'<img[^>]+src=""[^>]*/?\s*>', "", result)
+
+        print(
+            "    HTML composed (v8): %d stories, %d sources, %d articles scanned"
+            % (selected_count, source_count, scanned_count)
+        )
+        return result
+
     def write_outputs(self, date_label: str, html_body: str, logger: logging.Logger) -> None:
         """Write HTML to output dir and tmp mirror.
         将HTML写入输出目录和临时镜像文件。
@@ -136,7 +296,7 @@ class HtmlComposer:
         print("--- Step: Compose-only from latest artifact ---")
         curated_file = self._load_latest_artifact("curated")
         date_label = self._path_date_label(curated_file)
-        curated = self._load_curated_stories(curated_file)
+        curated, meta = self._load_curated_stories_with_meta(curated_file)
         articles: list[Article] = []
         matching_fetched = fetched_path(date_label)
         if matching_fetched.exists():
@@ -148,6 +308,7 @@ class HtmlComposer:
             curated,
             articles,
             week_range_label(window_days=self.config.fetch_window_days),
+            meta=meta,
         )
         self.write_outputs(date_label, html_body, logger)
         log_event(
@@ -310,10 +471,27 @@ class HtmlComposer:
         """Load and normalize curated stories from a JSON file.
         从 JSON 文件加载并规范化筛选故事。
         """
+        stories, _ = self._load_curated_stories_with_meta(path)
+        return stories
+
+    def _load_curated_stories_with_meta(
+        self, path: Path
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Load curated artifact, returning normalized stories and v8 meta if any.
+        加载筛选产物，返回规范化的故事与 v8 meta（如有）。
+        """
         from core.content_curator import ContentCurator
 
         raw = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(raw, list):
-            raise ValueError("Expected curated file to contain a JSON array")
+        meta: dict[str, Any] = {}
+        if isinstance(raw, dict):
+            stories_raw = raw.get("stories", [])
+            raw_meta = raw.get("meta")
+            if isinstance(raw_meta, dict):
+                meta = raw_meta
+        elif isinstance(raw, list):
+            stories_raw = raw
+        else:
+            raise ValueError("Expected curated file to contain a JSON array or object")
         curator = ContentCurator(self.config, logging.getLogger("ai-newsletter-v5"))
-        return curator._normalize_output(raw)
+        return curator._normalize_output(stories_raw), meta

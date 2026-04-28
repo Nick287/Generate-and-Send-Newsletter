@@ -103,9 +103,8 @@ def main() -> int:
     else:
         recipients = list(config.recipients)
 
-    subject = "🤖 AI Weekly Digest — Week of %s [Issue #%s]" % (
+    subject = "AI Weekly Digest — Week of %s" % (
         week_range_label(window_days=config.fetch_window_days),
-        config.issue_number,
     )
 
     result = run(config, recipients, subject, compose_result["html_body"], ctx["date_label"], ctx["logger"])
