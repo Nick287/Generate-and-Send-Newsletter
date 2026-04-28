@@ -22,6 +22,7 @@ Two ways to run:
 |---|---|---|
 | **Plain orchestrator** | `python run_pipeline.py` | Sequential 5-step pipeline, simple & debuggable |
 | **Agent Framework** | `python agent_run.py` | Per-step checkpointing, streaming, resume on failure |
+| **DevUI** | `python devui_run.py` | Browser-based workflow graph, event traces, checkpoint explorer |
 
 ---
 
@@ -30,6 +31,7 @@ Two ways to run:
 ```
 .
 ├── agent_run.py               # Agent Framework workflow entry point
+├── devui_run.py               # DevUI launcher (browser-based workflow debugger)
 ├── run_pipeline.py            # Plain pipeline orchestrator
 ├── requirements.txt
 │
@@ -177,6 +179,31 @@ python agent_run.py --cli --to a@x.com     # override recipients
 1. Install the [Microsoft Foundry for VS Code](https://marketplace.visualstudio.com/items?itemName=ms-windows-ai-studio.windows-ai-studio) extension
 2. Open Command Palette (`Ctrl+Shift+P`) → `Microsoft Foundry: Open Visualizer for Hosted Agents`
 3. Run your agent — the graph updates in real time
+
+### DevUI (Local Development UI)
+
+Agent Framework ships with a built-in **DevUI** — a browser-based workflow debugger that displays the full execution graph, per-node output timeline, and event traces:
+
+![DevUI](image/DevUI.png)
+
+#### Launch DevUI
+
+```bash
+# Via the helper script
+python devui_run.py                         # opens http://localhost:8080
+python devui_run.py --port 8081             # custom port
+python devui_run.py --tracing --no-open     # enable tracing, don't auto-open browser
+
+# Or via the devui CLI directly
+devui . --port 8080 --instrumentation
+```
+
+Once open, click **Run Workflow** (or **Run Again**) — DevUI will execute the full pipeline and show:
+
+- **Workflow Graph** — 6 nodes with directed edges, highlighting active / completed / failed nodes
+- **Execution Timeline** — per-node output messages and timestamps
+- **Events & Traces** — 53+ raw events including `workflow_event.completed`, `output_item.added`, etc.
+- **Checkpoint Storage** — automatic checkpoints for each run, resumable on failure
 
 ---
 

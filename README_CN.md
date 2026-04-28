@@ -22,6 +22,7 @@
 |---|---|---|
 | **普通编排器** | `python run_pipeline.py` | 顺序执行 5 步，简单直观，便于调试 |
 | **Agent Framework** | `python agent_run.py` | 逐步检查点、流式输出、失败后断点续跑 |
+| **DevUI** | `python devui_run.py` | 浏览器工作流图、事件追踪、检查点浏览器 |
 
 ---
 
@@ -30,6 +31,7 @@
 ```
 .
 ├── agent_run.py               # Agent Framework 工作流入口
+├── devui_run.py               # DevUI 启动器（浏览器工作流调试器）
 ├── run_pipeline.py            # 普通流水线编排器
 ├── requirements.txt
 │
@@ -172,6 +174,31 @@ python agent_run.py --cli --to a@x.com     # 覆盖收件人
 1. 安装 [Microsoft Foundry for VS Code](https://marketplace.visualstudio.com/items?itemName=ms-windows-ai-studio.windows-ai-studio) 扩展
 2. 打开命令面板（`Ctrl+Shift+P`）→ 执行 `Microsoft Foundry: Open Visualizer for Hosted Agents`
 3. 运行 agent — 工作流图会实时更新
+
+### DevUI（本地开发调试界面）
+
+Agent Framework 内置 **DevUI** — 一个基于浏览器的工作流调试器，可显示完整的执行图、逐节点输出时间线和事件追踪：
+
+![DevUI](image/DevUI.png)
+
+#### 启动 DevUI
+
+```bash
+# 通过辅助脚本启动
+python devui_run.py                         # 打开 http://localhost:8080
+python devui_run.py --port 8081             # 自定义端口
+python devui_run.py --tracing --no-open     # 启用追踪，不自动打开浏览器
+
+# 或直接使用 devui CLI
+devui . --port 8080 --instrumentation
+```
+
+打开后点击 **Run Workflow**（或 **Run Again**）— DevUI 将执行完整流水线并展示：
+
+- **工作流图** — 6 个节点及有向边，高亮显示活跃 / 已完成 / 失败的节点
+- **执行时间线** — 每个节点的输出消息和时间戳
+- **事件与追踪** — 53+ 原始事件，包括 `workflow_event.completed`、`output_item.added` 等
+- **检查点存储** — 每次运行自动保存检查点，失败后可恢复续跑
 
 ---
 
