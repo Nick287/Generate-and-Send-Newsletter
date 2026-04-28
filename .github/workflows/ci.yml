@@ -1,0 +1,85 @@
+name: CI
+
+# Public-safe CI: runs on every push/PR. Must NOT require any secret and
+# must NOT send real email. Only static checks + secret scan.
+# 公共安全 CI：所有 push/PR 触发。不需要任何 secret，也不会真实发送邮件。
+# 仅做静态检查 + secret 扫描。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install lint deps (no project install — keeps CI hermetic)
+        # We deliberately do NOT install the project's runtime requirements:
+        # Agent Framework and azure-ai-agentserver-agentframework currently
+        # have a transitive version conflict on agent-framework-core. CI only
+        # exercises checks that do not need importing those packages.
+        # 我们刻意不安装项目运行时依赖：Agent Framework 与
+        # azure-ai-agentserver-agentframework 当前对 agent-framework-core 存在
+        # 版本冲突。CI 只做不依赖这些包的检查。
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff==0.6.9 pyyaml==6.0.3
+
+      - name: Python syntax compile check
+        run: |
+          python -m compileall -q agent_run.py run_pipeline.py devui_run.py core steps
+
+      - name: Ruff lint (errors only; legacy `function/` excluded)
+        run: |
+          # Lint focuses on real-blocking errors (E9/F63/F7/F82) on the active
+          # Agent Framework code. The legacy `function/` directory predates the
+          # current architecture and is excluded to keep the baseline truthful.
+          ruff check --select E9,F63,F7,F82 --exclude function --output-format=github .
+
+      - name: YAML syntax check (workflows + config examples)
+        run: |
+          python - <<'PY'
+          import sys, glob, yaml
+          fails = 0
+          targets = (
+              glob.glob('.github/workflows/*.y*ml')
+              + glob.glob('.github/dependabot.yml')
+              + glob.glob('config/*.example.yaml')
+              + glob.glob('config/feeds.yaml')
+          )
+          for f in targets:
+              try:
+                  with open(f) as h:
+                      list(yaml.safe_load_all(h))
+                  print(f"OK   {f}")
+              except Exception as e:
+                  print(f"FAIL {f}: {e}")
+                  fails += 1
+          sys.exit(1 if fails else 0)
+          PY
+
+      - name: Secret scan on tracked files
+        run: |
+          bash scripts/secret-scan-public.sh

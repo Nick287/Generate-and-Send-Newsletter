@@ -313,6 +313,39 @@ The workflow at `.github/workflows/Generate-and-Send-Daily-AI-Newsletter.yaml` r
 
 ---
 
+## Security & Operations
+
+This repository is **public**. Treat the code as public-safe, and keep all
+run-time configuration private.
+
+- **Public:** code, docs, example configs (`*.example.yaml`, `.env.example`).
+- **Private (never commit):** `.env`, `config/config.yaml`, mailbox passwords,
+  Azure OpenAI keys, ACS connection strings, real recipient lists, generated
+  artifacts. The shipped `.gitignore` blocks these by default; the helper
+  `scripts/secret-scan-public.sh` is also wired into CI and can be run locally:
+
+  ```bash
+  bash scripts/secret-scan-public.sh
+  ```
+
+- **CI (`.github/workflows/ci.yml`)** runs on every push / pull request with
+  `permissions: contents: read`, no secrets, and only performs lint, syntax,
+  import and `--help` smoke checks. It must never send real email.
+- **Daily send workflow** is hardened with `permissions: contents: read`,
+  `concurrency`, `persist-credentials: false`, a 30-minute timeout, and a new
+  `dry_run=true` option exposed via manual `workflow_dispatch` for safe
+  rehearsal. Binding it to a protected GitHub Environment named
+  `production-send` is **strongly recommended** — the line is left commented
+  in `.github/workflows/Generate-and-Send-Daily-AI-Newsletter.yaml` so the
+  current cron keeps working until the repo owner creates the environment
+  in *Settings → Environments* and uncomments it.
+- **Forks & PRs:** open PRs from a fork branch; PR CI must remain green and
+  credential-free. Maintainer review is required before any change to the
+  scheduled send workflow.
+- **Reporting vulnerabilities:** see [SECURITY.md](SECURITY.md).
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

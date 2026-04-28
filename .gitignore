@@ -215,3 +215,13 @@ curated.json
 newsletter.html
 *.log
 secrets/
+
+# Public-safety extras (security/ci-baseline)
+*.pem
+*.pfx
+*.p12
+*.key
+*_id_rsa
+secrets/**
+config/config.yml
+.envrc.local
