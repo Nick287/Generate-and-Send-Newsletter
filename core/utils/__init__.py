@@ -16,6 +16,9 @@ Sub-modules:
 # Logging & notification
 from core.utils.logging import setup_logging, log_event, tg  # noqa: F401
 
+# Redaction (PII masking for logs/artifacts)
+from core.utils.redact import mask_email, mask_recipients  # noqa: F401
+
 # Text processing
 from core.utils.text import strip_html, truncate_text, escape_html  # noqa: F401
 
