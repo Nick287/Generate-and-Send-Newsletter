@@ -5,12 +5,12 @@ readability-lxml==0.8.4.1
 requests==2.33.1
 pyyaml==6.0.3
 lxml==6.1.0
-python-dotenv>=1.0.0
-pydantic>=2.0
-agent-framework>=1.2.0
+python-dotenv>=1.2.2
+pydantic>=2.13.3
+agent-framework>=1.2.1
 
 # HTTP server mode (optional — only for local Agent Inspector / Playground)
-# Has version conflict with agent-framework>=1.2.0 on PyPI as of 2026-04
+# Has version conflict with agent-framework>=1.2.1 on PyPI as of 2026-04
 # Install manually: pip install azure-ai-agentserver-agentframework --pre
 # azure-ai-agentserver-agentframework>=1.0.0b16
 

@@ -41,12 +41,12 @@ jobs:
 
     steps:
       - name: 1. Checkout repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
 
       - name: 2. Set up Python environment
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -117,7 +117,7 @@ jobs:
         # include secrets, real recipient lists, or sensitive config in artifacts.
         # 注意：公共仓库的 artifacts 任何人都可下载，不要包含 secret、真实收件人或敏感配置。
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: newsletter-artifacts-${{ github.run_number }}
           path: |
