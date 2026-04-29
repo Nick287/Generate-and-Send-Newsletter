@@ -117,7 +117,7 @@ jobs:
         # include secrets, real recipient lists, or sensitive config in artifacts.
         # 注意：公共仓库的 artifacts 任何人都可下载，不要包含 secret、真实收件人或敏感配置。
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: newsletter-artifacts-${{ github.run_number }}
           path: |
