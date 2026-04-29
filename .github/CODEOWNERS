@@ -5,9 +5,9 @@
 # Owners must have write access on the repository for assignment to take effect.
 # 仅对相应仓库具有写权限的所有者才会被自动指派评审。
 
-* @Nick287
+* @Nick287 @Lerty
 
 # Security/CI baseline files — extra eyes welcome
-.github/                @Nick287
-.github/workflows/      @Nick287
-SECURITY.md             @Nick287
+.github/                @Nick287 @Lerty
+.github/workflows/      @Nick287 @Lerty
+SECURITY.md             @Nick287 @Lerty
