@@ -31,6 +31,7 @@ from core.paths import ACS_SECRET_FILE, DATA_DIR
 from core.utils import (
     email_client_class,
     log_event,
+    mask_recipients,
     utc_now,
 )
 
@@ -60,8 +61,12 @@ class EmailDispatcher:
         Returns (success_flag, detail_message). | 返回 (成功标志, 详情消息)。
         """
         provider = (self.config.email_provider or "acs").lower()
+        recipients_count = len(recipients)
+        recipients_masked = mask_recipients(recipients)
         print("--- Step: Sending newsletter email (provider=%s) ---" % provider)
-        print("    Recipients: %s" % ", ".join(recipients))
+        print("    Recipients: count=%d masked=%s" % (
+            recipients_count, ", ".join(recipients_masked)
+        ))
 
         last_error = ""
         for attempt in range(1, 3):
@@ -74,7 +79,8 @@ class EmailDispatcher:
                         {
                             "date": date_label,
                             "subject": subject,
-                            "recipients": recipients,
+                            "recipients_count": recipients_count,
+                            "recipients_masked": recipients_masked,
                             "status": "success",
                             "detail": detail,
                             "provider": provider,
@@ -84,7 +90,9 @@ class EmailDispatcher:
                     )
                     log_event(
                         self.logger, logging.INFO, "send_success",
-                        recipients=recipients, detail=detail, provider=provider,
+                        recipients_count=recipients_count,
+                        recipients_masked=recipients_masked,
+                        detail=detail, provider=provider,
                     )
                     print("    Email sent successfully: %s" % detail)
                     return True, detail
@@ -111,7 +119,8 @@ class EmailDispatcher:
             {
                 "date": date_label,
                 "subject": subject,
-                "recipients": recipients,
+                "recipients_count": recipients_count,
+                "recipients_masked": recipients_masked,
                 "status": "failed",
                 "detail": last_error,
                 "provider": provider,

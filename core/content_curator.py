@@ -22,7 +22,7 @@ import re
 from typing import Any, Optional
 
 from core.models import AppConfig, Article
-from core.paths import CURATE_PROMPT_FILE
+from core.paths import CURATE_PROMPT_FILE, curate_prompt_path
 from core.constants import VALID_TAGS
 from core.llm_client import LlmClient
 from core.utils import (
@@ -36,8 +36,9 @@ from core.utils import (
 
 # re-use curated_path from utils (it's a path helper)
 # but curate_prompt_text is curate-specific
-def _curate_prompt_text() -> str:
-    content = CURATE_PROMPT_FILE.read_text(encoding="utf-8").strip()
+def _curate_prompt_text(version: str | None = None) -> str:
+    path = curate_prompt_path(version) if version else CURATE_PROMPT_FILE
+    content = path.read_text(encoding="utf-8").strip()
     if not content:
         raise RuntimeError("curate prompt file is empty")
     return content
@@ -52,6 +53,10 @@ class ContentCurator:
         self.config = config
         self.logger = logger
         self.llm = LlmClient(config, logger)
+        # Last v8-style metadata (headline / tldr / hero_image_index) extracted
+        # from the LLM response. Empty dict for v5/legacy array shape.
+        # 最近一次 v8 风格元数据；v5 为旧式数组时为空。
+        self.last_meta: dict[str, Any] = {}
 
     # ── public API | 公开接口 ───────────────────────────────────────────
     def curate(
@@ -62,7 +67,7 @@ class ContentCurator:
         Returns (curated_stories, critical_failure_flag). | 返回 (筛选故事, 严重失败标志)。
         """
         print("--- Step: Curating stories with LLM ---")
-        prompt_text = _curate_prompt_text()
+        prompt_text = _curate_prompt_text(getattr(self.config, "curate_prompt_version", None))
         payload = []
         for article in articles:
             payload.append(
@@ -89,10 +94,12 @@ class ContentCurator:
         )
 
         critical_failure = False
+        meta: dict[str, Any] = {}
         try:
             content = self.llm.chat(prompt_text, user_prompt, retries=2, delay_seconds=5.0)
-            curated = self._normalize_output(LlmClient.parse_json_array(content))
-            log_event(self.logger, logging.INFO, "curate_llm_success", story_count=len(curated))
+            raw_payload = LlmClient.parse_json_value(content)
+            curated, meta = self._normalize_payload(raw_payload)
+            log_event(self.logger, logging.INFO, "curate_llm_success", story_count=len(curated), has_meta=bool(meta))
             print("    LLM curated %d stories" % len(curated))
         except Exception as exc:
             critical_failure = True
@@ -102,8 +109,15 @@ class ContentCurator:
             print("    LLM curation failed, using fallback (%d stories)" % len(curated))
 
         curated = self._inject_images(curated, articles)
+        self.last_meta = meta
         path = curated_path(date_label)
-        path.write_text(json.dumps(curated, ensure_ascii=False, indent=2), encoding="utf-8")
+        # v8 wraps stories with meta; v5 keeps legacy array shape for back-compat.
+        # v8 用对象包裹（含 meta）；v5 保持数组以兼容旧消费者。
+        if meta:
+            payload_to_write: Any = {"meta": meta, "stories": curated}
+        else:
+            payload_to_write = curated
+        path.write_text(json.dumps(payload_to_write, ensure_ascii=False, indent=2), encoding="utf-8")
         image_count = sum(1 for s in curated if s.get("image_url"))
         log_event(
             self.logger,
@@ -141,6 +155,7 @@ class ContentCurator:
         image_url = str(story.get("image_url", "")).strip() or None
         if image_url and is_bad_image_url(image_url):
             image_url = None
+        published_date = str(story.get("published_date", "")).strip() or None
         return {
             "title": title,
             "link": link,
@@ -151,7 +166,38 @@ class ContentCurator:
             "read_time_minutes": max(1, read_time),
             "image_url": image_url,
             "tag": tag,
+            "published_date": published_date,
         }
+
+    def _normalize_payload(
+        self, raw: Any
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Accept either v5 array or v8 object payload from the LLM.
+        同时接受 v5 数组和 v8 对象型 LLM 输出。
+
+        Returns (stories, meta). meta is empty for v5 array shape.
+        返回 (stories, meta)，v5 下 meta 为空 dict。
+        """
+        if isinstance(raw, dict):
+            raw_stories = raw.get("stories")
+            if not isinstance(raw_stories, list):
+                raise ValueError("v8 curated payload missing 'stories' array")
+            stories = self._normalize_output(raw_stories)
+            meta: dict[str, Any] = {}
+            headline = raw.get("headline")
+            if isinstance(headline, str) and headline.strip():
+                meta["headline"] = headline.strip()
+            tldr = raw.get("tldr")
+            if isinstance(tldr, str) and tldr.strip():
+                meta["tldr"] = tldr.strip()
+            hero_idx = raw.get("hero_image_index")
+            try:
+                if hero_idx is not None:
+                    meta["hero_image_index"] = max(0, int(hero_idx))
+            except (TypeError, ValueError):
+                pass
+            return stories, meta
+        return self._normalize_output(raw), {}
 
     def _normalize_output(self, raw_stories: Any) -> list[dict[str, Any]]:
         """Validate, sanitize, deduplicate, and sort LLM-curated stories.

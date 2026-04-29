@@ -98,6 +98,32 @@ class LlmClient:
             raise ValueError("LLM response did not contain a JSON array")
         return json.loads(value[start : end + 1])
 
+    @staticmethod
+    def parse_json_value(content: str) -> Any:
+        """Extract a JSON value (object or array) from LLM response.
+        从 LLM 响应中提取 JSON 值（对象或数组）。
+
+        Supports v8 (object with headline/tldr/stories) and v5 (array) shapes.
+        同时支持 v8（对象）与 v5（数组）两种形式。
+        """
+        value = (content or "").strip()
+        if value.startswith("```"):
+            value = re.sub(r"^```[a-zA-Z0-9_-]*\n", "", value)
+            value = re.sub(r"\n```$", "", value).strip()
+        obj_start = value.find("{")
+        arr_start = value.find("[")
+        if obj_start != -1 and (arr_start == -1 or obj_start < arr_start):
+            end = value.rfind("}")
+            if end == -1 or end < obj_start:
+                raise ValueError("LLM response did not contain a JSON object")
+            return json.loads(value[obj_start : end + 1])
+        if arr_start != -1:
+            end = value.rfind("]")
+            if end == -1 or end < arr_start:
+                raise ValueError("LLM response did not contain a JSON array")
+            return json.loads(value[arr_start : end + 1])
+        raise ValueError("LLM response did not contain a JSON object or array")
+
     # ── internal helpers | 内部工具方法 ─────────────────────────────────────
     def _call(
         self,

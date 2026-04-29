@@ -63,6 +63,7 @@ def run(
 
     return {
         "stories": curated,
+        "meta": dict(curator.last_meta),
         "llm_failed": llm_failed,
         "output_path": str(curated_path(date_label)),
     }

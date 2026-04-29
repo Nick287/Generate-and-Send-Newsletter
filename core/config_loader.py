@@ -22,12 +22,15 @@ from core.models import AppConfig, FeedSource
 from core.paths import (
     FEEDS_FILE,
     CONFIG_FILE,
-    CURATE_PROMPT_FILE,
     DEFAULT_LLM_ENDPOINT,
     DEFAULT_LLM_MODEL,
     DEFAULT_ACS_SENDER,
+    DEFAULT_TEMPLATE_VERSION,
+    DEFAULT_CURATE_PROMPT_VERSION,
+    curate_prompt_path,
+    template_path,
 )
-from core.utils import log_event
+from core.utils import log_event, mask_recipients
 
 
 class ConfigLoader:
@@ -43,14 +46,19 @@ class ConfigLoader:
         print("--- Step: Loading configuration files ---")
         feeds = self._validate_feeds(self._load_yaml(FEEDS_FILE))
         config = self._validate_config(self._load_yaml(CONFIG_FILE))
-        if not CURATE_PROMPT_FILE.exists():
-            raise FileNotFoundError("Missing prompt file: %s" % CURATE_PROMPT_FILE)
+        prompt_file = curate_prompt_path(config.curate_prompt_version)
+        if not prompt_file.exists():
+            raise FileNotFoundError("Missing prompt file: %s" % prompt_file)
+        tmpl_file = template_path(config.template_version)
+        if not tmpl_file.exists():
+            raise FileNotFoundError("Missing template file: %s" % tmpl_file)
         log_event(
             logger,
             logging.INFO,
             "config_loaded",
             feed_count=len(feeds),
-            recipients=config.recipients,
+            recipients_count=len(config.recipients),
+            recipients_masked=mask_recipients(config.recipients),
             llm_endpoint=config.llm_endpoint,
         )
         print("    Loaded %d feeds, %d recipients" % (len(feeds), len(config.recipients)))
@@ -273,6 +281,25 @@ class ConfigLoader:
         if not isinstance(retention_days, int) or retention_days < 1:
             raise ValueError("config.yaml cleanup.retention_days must be >= 1")
 
+        # ── Template / prompt versioning (zero-behavior-change defaults) ──────
+        # 模板 / prompt 版本选择（默认保持现有行为不变）
+        template_section = doc.get("template") if isinstance(doc.get("template"), dict) else {}
+        template_version = (
+            os.environ.get("NEWSLETTER_TEMPLATE_VERSION", "").strip()
+            or str(template_section.get("version") or "").strip()
+            or str(llm.get("template_version") or "").strip()
+            or DEFAULT_TEMPLATE_VERSION
+        )
+        curate_prompt_version = (
+            os.environ.get("CURATE_PROMPT_VERSION", "").strip()
+            or str(llm.get("curate_prompt_version") or "").strip()
+            or DEFAULT_CURATE_PROMPT_VERSION
+        )
+        # Validate via path helpers (raises ValueError on unsafe input).
+        # 通过路径辅助函数校验（不安全输入会抛 ValueError）。
+        template_path(template_version)
+        curate_prompt_path(curate_prompt_version)
+
         return AppConfig(
             issue_number=issue_number,
             recipients=[item.strip() for item in recipients],
@@ -305,4 +332,6 @@ class ConfigLoader:
             enrich_max_body_chars=max_body_chars,
             cleanup_retention_days=retention_days,
             from_alias=from_alias,
+            template_version=template_version,
+            curate_prompt_version=curate_prompt_version,
         )

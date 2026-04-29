@@ -1,0 +1,13 @@
+# Code Owners — review routing for PRs
+# 代码所有者 — PR 默认评审路由
+#
+# These owners are auto-requested for review on PRs touching the listed paths.
+# Owners must have write access on the repository for assignment to take effect.
+# 仅对相应仓库具有写权限的所有者才会被自动指派评审。
+
+* @Nick287
+
+# Security/CI baseline files — extra eyes welcome
+.github/                @Nick287
+.github/workflows/      @Nick287
+SECURITY.md             @Nick287
