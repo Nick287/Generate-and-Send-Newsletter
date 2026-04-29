@@ -33,7 +33,8 @@ Two ways to run:
 ├── agent_run.py               # Agent Framework workflow entry point
 ├── devui_run.py               # DevUI launcher (browser-based workflow debugger)
 ├── run_pipeline.py            # Plain pipeline orchestrator
-├── requirements.txt
+├── requirements.txt           # Python dependencies
+├── SECURITY.md                # Security policy & reporting
 │
 ├── config/
 │   ├── config.yaml            # Main config (gitignored)
@@ -74,6 +75,22 @@ Two ways to run:
 ├── templates/
 │   └── v7.html                # Responsive HTML email template
 │
+├── image/                     # Documentation images
+│   ├── workflow.png           # Workflow graph screenshot
+│   └── DevUI.png              # DevUI screenshot
+│
+├── samples/                   # Example / demo workflows
+│   └── workflow_spam.py       # Spam detection workflow sample (DevUI demo)
+│
+├── tests/                     # Unit & integration tests
+│   ├── test_config_loaded_redact.py
+│   ├── test_redact.py
+│   ├── test_v8_compose.py
+│   └── test_versioning.py
+│
+├── scripts/                   # Utility scripts
+│   └── secret-scan-public.sh  # Pre-push secret scanning
+│
 ├── artifacts/                 # Intermediate data (gitignored)
 │   ├── fetched-YYYY-MM-DD.json
 │   ├── enriched-YYYY-MM-DD.json
@@ -83,8 +100,17 @@ Two ways to run:
 │   └── newsletter-YYYY-MM-DD.html
 │
 ├── function/                  # Legacy modules (EmailSender used by SMTP)
-└── .github/workflows/
-    └── Generate-and-Send-Daily-AI-Newsletter.yaml
+│
+├── .devcontainer/             # Dev Container config
+│   ├── devcontainer.json      # VS Code Dev Container settings
+│   └── Dockerfile             # Container image definition
+│
+└── .github/
+    ├── CODEOWNERS             # PR review auto-assignment
+    ├── dependabot.yml         # Automated dependency updates
+    └── workflows/
+        ├── Generate-and-Send-Daily-AI-Newsletter.yaml  # Daily newsletter pipeline
+        └── ci.yml             # CI checks (lint, syntax, secret scan)
 ```
 
 ---
@@ -310,39 +336,6 @@ The workflow at `.github/workflows/Generate-and-Send-Daily-AI-Newsletter.yaml` r
 | `SMTP_PASS` | SMTP password |
 | `TO_ADDRS` | Recipients (comma-separated) |
 | `FROM_ALIAS` | Sender display name |
-
----
-
-## Security & Operations
-
-This repository is **public**. Treat the code as public-safe, and keep all
-run-time configuration private.
-
-- **Public:** code, docs, example configs (`*.example.yaml`, `.env.example`).
-- **Private (never commit):** `.env`, `config/config.yaml`, mailbox passwords,
-  Azure OpenAI keys, ACS connection strings, real recipient lists, generated
-  artifacts. The shipped `.gitignore` blocks these by default; the helper
-  `scripts/secret-scan-public.sh` is also wired into CI and can be run locally:
-
-  ```bash
-  bash scripts/secret-scan-public.sh
-  ```
-
-- **CI (`.github/workflows/ci.yml`)** runs on every push / pull request with
-  `permissions: contents: read`, no secrets, and only performs lint, syntax,
-  import and `--help` smoke checks. It must never send real email.
-- **Daily send workflow** is hardened with `permissions: contents: read`,
-  `concurrency`, `persist-credentials: false`, a 30-minute timeout, and a new
-  `dry_run=true` option exposed via manual `workflow_dispatch` for safe
-  rehearsal. Binding it to a protected GitHub Environment named
-  `production-send` is **strongly recommended** — the line is left commented
-  in `.github/workflows/Generate-and-Send-Daily-AI-Newsletter.yaml` so the
-  current cron keeps working until the repo owner creates the environment
-  in *Settings → Environments* and uncomments it.
-- **Forks & PRs:** open PRs from a fork branch; PR CI must remain green and
-  credential-free. Maintainer review is required before any change to the
-  scheduled send workflow.
-- **Reporting vulnerabilities:** see [SECURITY.md](SECURITY.md).
 
 ---
 

@@ -33,7 +33,8 @@
 ├── agent_run.py               # Agent Framework 工作流入口
 ├── devui_run.py               # DevUI 启动器（浏览器工作流调试器）
 ├── run_pipeline.py            # 普通流水线编排器
-├── requirements.txt
+├── requirements.txt           # Python 依赖
+├── SECURITY.md                # 安全策略与报告
 │
 ├── config/
 │   ├── config.yaml            # 主配置（已 gitignore）
@@ -74,11 +75,42 @@
 ├── templates/
 │   └── v7.html                # 响应式 HTML 邮件模板
 │
+├── image/                     # 文档图片
+│   ├── workflow.png           # 工作流图截图
+│   └── DevUI.png              # DevUI 截图
+│
+├── samples/                   # 示例 / 演示工作流
+│   └── workflow_spam.py       # 垃圾邮件检测工作流示例（DevUI 演示）
+│
+├── tests/                     # 单元测试与集成测试
+│   ├── test_config_loaded_redact.py
+│   ├── test_redact.py
+│   ├── test_v8_compose.py
+│   └── test_versioning.py
+│
+├── scripts/                   # 实用脚本
+│   └── secret-scan-public.sh  # 推送前 secret 扫描
+│
 ├── artifacts/                 # 中间产物（已 gitignore）
+│   ├── fetched-YYYY-MM-DD.json
+│   ├── enriched-YYYY-MM-DD.json
+│   ├── curated-YYYY-MM-DD.json
+│   └── send-log.json
 ├── dist/                      # 最终输出（已 gitignore）
+│   └── newsletter-YYYY-MM-DD.html
+│
 ├── function/                  # 遗留模块（SMTP 发送仍在使用）
-└── .github/workflows/
-    └── Generate-and-Send-Daily-AI-Newsletter.yaml
+│
+├── .devcontainer/             # Dev Container 配置
+│   ├── devcontainer.json      # VS Code Dev Container 设置
+│   └── Dockerfile             # 容器镜像定义
+│
+└── .github/
+    ├── CODEOWNERS             # PR 评审自动指派
+    ├── dependabot.yml         # 自动依赖更新
+    └── workflows/
+        ├── Generate-and-Send-Daily-AI-Newsletter.yaml  # 每日简报流水线
+        └── ci.yml             # CI 检查（lint、语法、secret 扫描）
 ```
 
 ---
@@ -305,24 +337,6 @@ email:
 | `SMTP_PASS` | SMTP 密码 |
 | `TO_ADDRS` | 收件人（逗号分隔） |
 | `FROM_ALIAS` | 发件人显示名称 |
-
----
-
-## 安全与运维
-
-本仓库**公开可读**。所有代码视为公共安全内容，运行时配置必须保密。
-
-- **公开**：源代码、文档、示例配置（`*.example.yaml`、`.env.example`）。
-- **保密（绝不入库）**：`.env`、`config/config.yaml`、邮箱密码、Azure OpenAI key、ACS 连接串、真实收件人、生成的中间产物。仓库的 `.gitignore` 已默认拦截，CI 也会调用 `scripts/secret-scan-public.sh` 二次校验，本地也可运行：
-
-  ```bash
-  bash scripts/secret-scan-public.sh
-  ```
-
-- **CI (`.github/workflows/ci.yml`)** 在所有 push / PR 触发，使用 `permissions: contents: read`，**不依赖任何 secret**，只做 lint、语法、import 和 `--help` 冒烟，绝不真实发送邮件。
-- **每日发送 workflow** 已加固：`permissions: contents: read`、`concurrency`、`persist-credentials: false`、3 十分钟超时，并为手动 `workflow_dispatch` 提供 `dry_run=true` 选项以供安全演练。**强烈建议** 将该 workflow 绑定到名为 `production-send` 的受保护环境：`Generate-and-Send-Daily-AI-Newsletter.yaml` 中该行以注释形式保留，仓库所有者需在 *Settings → Environments* 创建该 environment 后取消注释，以免当前 cron 中断。
-- **Fork 与 PR**：从 fork 分支提交 PR，PR CI 必须保持绿色且不依赖 secret。任何改动 schedule 发送 workflow 的 PR 都需维护者评审。
-- **漏洞上报**：参见 [SECURITY.md](SECURITY.md)。
 
 ---
 
