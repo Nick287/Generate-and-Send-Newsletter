@@ -31,6 +31,7 @@
 ```
 .
 ├── agent_run.py               # Agent Framework 工作流入口
+├── agent_workflow.py           # 共享工作流定义（执行器、状态、图）
 ├── devui_run.py               # DevUI 启动器（浏览器工作流调试器）
 ├── run_pipeline.py            # 普通流水线编排器
 ├── requirements.txt           # Python 依赖
@@ -71,15 +72,23 @@
 │   └── step5_send.py          # 发送邮件
 │
 ├── prompts/
-│   └── curate-v5.md           # LLM 策展提示词（评分标准）
+│   ├── curate-v5.md           # LLM 策展提示词 v5
+│   └── curate-v8.md           # LLM 策展提示词 v8（最新评分标准）
 ├── templates/
-│   └── v7.html                # 响应式 HTML 邮件模板
+│   ├── v7.html                # 响应式 HTML 邮件模板 v7
+│   └── v8.html                # HTML 邮件模板 v8（最新）
 │
 ├── image/                     # 文档图片
 │   ├── workflow.png           # 工作流图截图
 │   └── DevUI.png              # DevUI 截图
 │
 ├── samples/                   # 示例 / 演示工作流
+│   ├── simple_pipeline.py     # 最小顺序流水线示例
+│   ├── simple_checkpoint.py   # 检查点基础示例
+│   ├── checkpoint_with_resume.py # 检查点恢复示例
+│   ├── step1_executors_and_edges.py # 执行器与边教程
+│   ├── step2_agents_in_a_workflow.py # 工作流中的 Agent 教程
+│   ├── evaluate_workflow.py   # 工作流评估示例
 │   └── workflow_spam.py       # 垃圾邮件检测工作流示例（DevUI 演示）
 │
 ├── tests/                     # 单元测试与集成测试
@@ -192,20 +201,10 @@ ConfigLoader → FeedFetcher → ArticleEnricher → StoryCurator → HtmlCompos
 ### 使用方式
 
 ```bash
-# HTTP 服务器模式（用于 Agent Inspector / Visualizer）
-python agent_run.py
-
-# CLI 模式
-python agent_run.py --cli --dry-run        # 跳过邮件发送
-python agent_run.py --cli                  # 完整运行
-python agent_run.py --cli --to a@x.com     # 覆盖收件人
+python agent_run.py                        # 完整流水线运行
+python agent_run.py --dry-run              # 跳过邮件发送
+python agent_run.py --to a@x.com           # 覆盖收件人
 ```
-
-### Visualizer 配置步骤
-
-1. 安装 [Microsoft Foundry for VS Code](https://marketplace.visualstudio.com/items?itemName=ms-windows-ai-studio.windows-ai-studio) 扩展
-2. 打开命令面板（`Ctrl+Shift+P`）→ 执行 `Microsoft Foundry: Open Visualizer for Hosted Agents`
-3. 运行 agent — 工作流图会实时更新
 
 ### DevUI（本地开发调试界面）
 

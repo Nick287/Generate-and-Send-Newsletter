@@ -18,7 +18,7 @@ except ImportError:
     pass
 
 from agent_framework.devui import serve
-from agent_run import newsletter_workflow
+from agent_workflow import newsletter_workflow
 
 
 def main():

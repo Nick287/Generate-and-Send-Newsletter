@@ -37,12 +37,10 @@ jobs:
 
       - name: Install lint deps (no project install — keeps CI hermetic)
         # We deliberately do NOT install the project's runtime requirements:
-        # Agent Framework and azure-ai-agentserver-agentframework currently
-        # have a transitive version conflict on agent-framework-core. CI only
+        # Agent Framework + DevUI have heavy transitive deps. CI only
         # exercises checks that do not need importing those packages.
-        # 我们刻意不安装项目运行时依赖：Agent Framework 与
-        # azure-ai-agentserver-agentframework 当前对 agent-framework-core 存在
-        # 版本冲突。CI 只做不依赖这些包的检查。
+        # 我们刻意不安装项目运行时依赖：Agent Framework + DevUI 有较重的
+        # 传递依赖。CI 只做不依赖这些包的检查。
         run: |
           python -m pip install --upgrade pip
           pip install ruff==0.6.9 pyyaml==6.0.3

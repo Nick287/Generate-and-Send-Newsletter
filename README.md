@@ -31,6 +31,7 @@ Two ways to run:
 ```
 .
 ├── agent_run.py               # Agent Framework workflow entry point
+├── agent_workflow.py           # Shared workflow definition (executors, state, graph)
 ├── devui_run.py               # DevUI launcher (browser-based workflow debugger)
 ├── run_pipeline.py            # Plain pipeline orchestrator
 ├── requirements.txt           # Python dependencies
@@ -71,15 +72,23 @@ Two ways to run:
 │   └── step5_send.py          # Send email
 │
 ├── prompts/
-│   └── curate-v5.md           # LLM curation prompt (scoring rubric)
+│   ├── curate-v5.md           # LLM curation prompt v5
+│   └── curate-v8.md           # LLM curation prompt v8 (latest scoring rubric)
 ├── templates/
-│   └── v7.html                # Responsive HTML email template
+│   ├── v7.html                # Responsive HTML email template v7
+│   └── v8.html                # HTML email template v8 (latest)
 │
 ├── image/                     # Documentation images
 │   ├── workflow.png           # Workflow graph screenshot
 │   └── DevUI.png              # DevUI screenshot
 │
 ├── samples/                   # Example / demo workflows
+│   ├── simple_pipeline.py     # Minimal sequential pipeline sample
+│   ├── simple_checkpoint.py   # Checkpoint basics sample
+│   ├── checkpoint_with_resume.py # Checkpoint with resume sample
+│   ├── step1_executors_and_edges.py # Executors & edges tutorial
+│   ├── step2_agents_in_a_workflow.py # Agents in a workflow tutorial
+│   ├── evaluate_workflow.py   # Workflow evaluation sample
 │   └── workflow_spam.py       # Spam detection workflow sample (DevUI demo)
 │
 ├── tests/                     # Unit & integration tests
@@ -191,20 +200,10 @@ Each node passes a shared `PipelineState` dataclass downstream. The Visualizer s
 ### Usage
 
 ```bash
-# HTTP Server mode (for Agent Inspector / Visualizer)
-python agent_run.py
-
-# CLI mode
-python agent_run.py --cli --dry-run        # skip email send
-python agent_run.py --cli                  # full run
-python agent_run.py --cli --to a@x.com     # override recipients
+python agent_run.py                        # full pipeline run
+python agent_run.py --dry-run              # skip email send
+python agent_run.py --to a@x.com           # override recipients
 ```
-
-### Visualizer Setup
-
-1. Install the [Microsoft Foundry for VS Code](https://marketplace.visualstudio.com/items?itemName=ms-windows-ai-studio.windows-ai-studio) extension
-2. Open Command Palette (`Ctrl+Shift+P`) → `Microsoft Foundry: Open Visualizer for Hosted Agents`
-3. Run your agent — the graph updates in real time
 
 ### DevUI (Local Development UI)
 

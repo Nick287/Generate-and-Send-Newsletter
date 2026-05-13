@@ -1,0 +1,32 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "DevUI (Workflow Debug)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/devui_run.py",
+            "args": ["--no-open"],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "CLI — Full Run",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/agent_run.py",
+            "args": [],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "CLI — Dry Run (skip send)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/agent_run.py",
+            "args": ["--dry-run"],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}

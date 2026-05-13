@@ -105,9 +105,9 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
             echo "Manual dry-run requested — skipping real send."
-            python agent_run.py --cli --dry-run
+            python agent_run.py --dry-run
           else
-            python agent_run.py --cli
+            python agent_run.py
           fi
 
       - name: 6. Upload artifacts
