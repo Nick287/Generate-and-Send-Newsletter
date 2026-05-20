@@ -74,6 +74,9 @@ newsletters:
     url: https://news.smol.ai/rss.xml
   - name: Interconnects
     url: https://www.interconnects.ai/feed
+  - name: 赛博禅心
+    url: https://wechat2rss.bestblogs.dev/feed/752c31ca0446b837339463fc5440539e20267d2f.xml
+    skip_enrich: true
 
 analysts:
   - name: Stratechery
