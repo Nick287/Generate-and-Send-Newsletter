@@ -1,14 +1,10 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Spam Detection Workflow
-Sample for DevUI.
+"""Spam Detection Workflow Sample for DevUI.
 
-The following sample demonstrates a comprehensive 4-step workflow
-with multiple executors
-that process, detect spam, and handle email messages.
-This workflow illustrates
-complex branching logic with human-in-the-loop approval
-and realistic processing delays.
+The following sample demonstrates a comprehensive 4-step workflow with multiple executors
+that process, detect spam, and handle email messages. This workflow illustrates
+complex branching logic with human-in-the-loop approval and realistic processing delays.
 
 Workflow Steps:
 1. Email Preprocessor - Cleans and prepares the email
@@ -193,9 +189,9 @@ class SpamDetector(Executor):
 
         is_spam = spam_score >= 0.5
 
-        # Request human approval before proceeding
+        # Request human approval before proceeding using new API
         approval_request = SpamApprovalRequest(
-            email_message=email_text[:200],
+            email_message=email_text[:200],  # First 200 chars
             detected_as_spam=is_spam,
             confidence=spam_score,
             reasons=spam_reasons,
@@ -337,6 +333,7 @@ class FinalProcessor(Executor):
 
         # Build appropriate message based on classification
         if result.is_spam:
+            # For spam messages
             spam_indicators = ", ".join(result.spam_reasons) if result.spam_reasons else "none detected"
 
             if result.was_human_reviewed:
@@ -359,6 +356,7 @@ class FinalProcessor(Executor):
                     f"Processing time: {total_time:.1f}s"
                 )
         else:
+            # For legitimate messages
             if result.was_human_reviewed:
                 ai_status = "SPAM" if result.ai_original_decision else "LEGITIMATE"
                 human_decision = result.human_override if result.human_override else "unknown"
@@ -418,6 +416,8 @@ workflow = (
     .add_edge(legitimate_message_handler, final_processor)
     .build()
 )
+
+# Note: Workflow metadata is determined by executors and graph structure
 
 
 def main():

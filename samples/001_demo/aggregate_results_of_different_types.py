@@ -1,0 +1,148 @@
+# Copyright (c) Microsoft. All rights reserved.
+
+import asyncio
+import os
+import random
+import sys
+
+from agent_framework import Executor, WorkflowBuilder, WorkflowContext, WorkflowViz, handler
+from typing_extensions import Never
+
+"""
+Sample: Concurrent fan out and fan in with two different tasks that output results of different types.
+
+Purpose:
+Show how to construct a parallel branch pattern in workflows. Demonstrate:
+- Fan out by targeting multiple executors from one dispatcher.
+- Fan in by collecting a list of results from the executors.
+
+Prerequisites:
+- Familiarity with WorkflowBuilder, executors, edges, events, and streaming runs.
+"""
+
+
+class Dispatcher(Executor):
+    """
+    The sole purpose of this decorator is to dispatch the input of the workflow to
+    other executors.
+    """
+
+    @handler
+    async def handle(self, numbers: list[int], ctx: WorkflowContext[list[int]]):
+        if not numbers:
+            raise RuntimeError("Input must be a valid list of integers.")
+
+        await ctx.send_message(numbers)
+
+
+class Average(Executor):
+    """Calculate the average of a list of integers."""
+
+    @handler
+    async def handle(self, numbers: list[int], ctx: WorkflowContext[float]):
+        await asyncio.sleep(0.5)  # Simulate computation time
+        average: float = sum(numbers) / len(numbers)
+        await ctx.send_message(average)
+
+
+class Sum(Executor):
+    """Calculate the sum of a list of integers."""
+
+    @handler
+    async def handle(self, numbers: list[int], ctx: WorkflowContext[int]):
+        await asyncio.sleep(0.3)  # Simulate computation time
+        total: int = sum(numbers)
+        await ctx.send_message(total)
+
+
+class Aggregator(Executor):
+    """Aggregate the results from the different tasks and yield the final output."""
+
+    @handler
+    async def handle(self, results: list[int | float], ctx: WorkflowContext[Never, list[int | float]]):
+        """Receive the results from the source executors.
+
+        The framework will automatically collect messages from the source executors
+        and deliver them as a list.
+
+        Args:
+            results (list[int | float]): execution results from upstream executors.
+                The type annotation must be a list of union types that the upstream
+                executors will produce.
+            ctx (WorkflowContext[Never, list[int | float]]): A workflow context that can yield the final output.
+        """
+        await ctx.yield_output(results)
+
+
+async def main() -> None:
+    # 1) Build a simple fan out and fan in workflow
+    dispatcher = Dispatcher(id="dispatcher")
+    average = Average(id="average")
+    summation = Sum(id="summation")
+    aggregator = Aggregator(id="aggregator")
+
+    workflow = (
+        WorkflowBuilder(start_executor=dispatcher)
+        .add_fan_out_edges(dispatcher, [average, summation])
+        .add_fan_in_edges([average, summation], aggregator)
+        .build()
+    )
+
+    # 2) Visualization
+    viz = WorkflowViz(workflow)
+    print("Mermaid:\n=======")
+    print(viz.to_mermaid())
+    print("=======")
+    print("\nDiGraph:\n=======")
+    print(viz.to_digraph(include_internal_executors=True))
+    print("=======")
+
+    _dir = os.path.dirname(os.path.abspath(__file__))
+    svg_file = viz.export(format="svg", filename=os.path.join(_dir, "aggregate_different_types_workflow.svg"))
+    print(f"\nSVG exported to: {svg_file}\n")
+
+    # 3) Run the workflow
+    print("=" * 60)
+    print("Running workflow with parallel aggregation...")
+    print("=" * 60)
+    numbers = [random.randint(1, 100) for _ in range(10)]
+    print(f"Input: {numbers}\n")
+
+    output: list[int | float] | None = None
+    async for event in workflow.run(numbers, stream=True):
+        if event.type == "output":
+            output = event.data
+
+    if output is not None:
+        print(f"\nResults: {output}")
+        if len(output) == 2:
+            avg, total = output
+            print(f"  Average: {avg}")
+            print(f"  Sum: {total}")
+
+
+def devui():
+    """Launch the workflow in DevUI."""
+    from agent_framework.devui import serve
+
+    dispatcher = Dispatcher(id="dispatcher")
+    average = Average(id="average")
+    summation = Sum(id="summation")
+    aggregator = Aggregator(id="aggregator")
+
+    workflow = (
+        WorkflowBuilder(start_executor=dispatcher)
+        .add_fan_out_edges(dispatcher, [average, summation])
+        .add_fan_in_edges([average, summation], aggregator)
+        .build()
+    )
+
+    print("Starting DevUI...")
+    serve(entities=[workflow], port=8090, auto_open=True)
+
+
+if __name__ == "__main__":
+    if "--devui" in sys.argv:
+        devui()
+    else:
+        asyncio.run(main())
