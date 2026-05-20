@@ -76,6 +76,7 @@ class Article:
     og_image: Optional[str] = None
     image_url: Optional[str] = None
     pre_score: Optional[float] = None
+    skip_enrich: bool = False
 
 
 @dataclass
