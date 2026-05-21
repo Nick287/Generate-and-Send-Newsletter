@@ -26,6 +26,7 @@ from typing import Any, Optional
 import requests
 
 from core.models import AppConfig, Article, FeedSource, FetchResult
+from core.feeds.telegram_channel import fetch as _telegram_fetch
 from core.constants import (
     SEMVER_PATTERN,
     _BUILD_NUMBER_PATTERN,
@@ -125,6 +126,8 @@ class FeedFetcher:
         Returns (articles, failed_feed_name_or_None).
         返回 (文章列表, 失败的源名称或None)。
         """
+        if source.kind == "telegram":
+            return _telegram_fetch(source, cutoff, self.config, self.logger)
         session = requests.Session()
         headers = {"User-Agent": "AI-Weekly-Digest/5.0"}
         try:
