@@ -119,6 +119,7 @@ def load_articles(path: Path) -> list[Article]:
                     if item.get("pre_score") is not None
                     else None
                 ),
+                skip_enrich=bool(item.get("skip_enrich", False)),
             )
         )
     return articles
