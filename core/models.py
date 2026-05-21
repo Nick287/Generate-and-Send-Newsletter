@@ -14,6 +14,7 @@ class FeedSource:
     """Represents a single RSS/Atom feed source.
     表示一个RSS/Atom订阅源。
     """
+
     category: str
     name: str
     url: str
@@ -26,6 +27,7 @@ class AppConfig:
     """Application configuration loaded from config.yaml.
     从 config.yaml 加载的应用配置。
     """
+
     issue_number: int
     recipients: list[str]
     acs_sender: str
@@ -59,6 +61,8 @@ class AppConfig:
     from_alias: str = ""
     template_version: str = "v7"
     curate_prompt_version: str = "v5"
+    compose_bilingual: bool = True
+    translate_prompt_version: str = "v1"
 
 
 @dataclass
@@ -66,6 +70,7 @@ class Article:
     """Represents a single news article throughout the pipeline.
     表示流水线中的一篇新闻文章。
     """
+
     title: str
     link: str
     source_name: str
@@ -84,6 +89,7 @@ class FetchResult:
     """Result of the feed-fetching stage.
     RSS抓取阶段的结果。
     """
+
     articles: list[Article]
     failed_feeds: list[str]
     total_feeds: int
@@ -95,6 +101,7 @@ class StageOutcome:
     """Generic outcome descriptor for any pipeline stage.
     流水线任意阶段的通用结果描述。
     """
+
     critical_failure: bool = False
     partial_failure: bool = False
     message: str = ""
