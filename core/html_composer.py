@@ -19,8 +19,10 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
+from core.llm_client import LlmClient
 from core.models import AppConfig, Article
 from core.paths import DATA_DIR, OUTPUT_DIR, TEMPLATES_DIR, TMP_HTML_FILE, template_path
+from core.translator import TranslationFailed, Translator
 from core.constants import TAG_PLACEHOLDER_COLORS
 from core.utils import (
     escape_html,
@@ -31,6 +33,12 @@ from core.utils import (
     output_html_path,
     truncate_text,
 )
+
+# Splice anchor for bilingual CN section (must match v8.html exactly, count==1).
+# 双语 CN 段拼接锚点（必须与 v8.html 完全匹配，仅出现 1 次）。
+_FOOTER_MARKER = "<!-- ===== FOOTER ===== -->"
+_BILINGUAL_BODY_START = "<!--BILINGUAL_BODY_START-->"
+_BILINGUAL_BODY_END = "<!--BILINGUAL_BODY_END-->"
 
 _AZ_BADGE_COLORS = {
     "GA": "059669",
@@ -63,7 +71,8 @@ class HtmlComposer:
         self,
         stories: list[dict[str, Any]],
         scanned_articles: list[Article],
-        date_range: str,
+        date_label: str,
+        logger: Optional[logging.Logger] = None,
         meta: Optional[dict[str, Any]] = None,
     ) -> str:
         """Take curated stories + all scanned articles and return filled HTML.
@@ -76,10 +85,42 @@ class HtmlComposer:
         template = tmpl.read_text(encoding="utf-8")
 
         if version == "v8":
-            return self._compose_v8(
-                template, stories, scanned_articles, date_range, meta or {}
+            en_html = self._compose_v8(
+                template, stories, scanned_articles, date_label, meta or {}
             )
-        return self._compose_v7(template, stories, scanned_articles, date_range)
+        else:
+            en_html = self._compose_v7(template, stories, scanned_articles, date_label)
+
+        if not getattr(self.config, "compose_bilingual", False) or version != "v8":
+            return en_html
+
+        active_logger = logger or logging.getLogger("ai-newsletter-v5")
+        try:
+            translator = Translator(
+                llm_client=LlmClient(self.config, active_logger),
+                prompt_version=getattr(self.config, "translate_prompt_version", "v1"),
+                logger=active_logger,
+            )
+            translated_stories = translator.translate_stories(stories)
+            cn_section = self._compose_chinese_section(
+                translated_stories, scanned_articles, date_label, meta or {}
+            )
+            spliced = self._splice_chinese_section(en_html, cn_section)
+            active_logger.info("bilingual=success")
+            log_event(
+                active_logger, logging.INFO, "compose_bilingual", bilingual="success"
+            )
+            return spliced
+        except TranslationFailed as exc:
+            active_logger.warning("bilingual=skipped reason=%s", exc)
+            log_event(
+                active_logger,
+                logging.WARNING,
+                "compose_bilingual",
+                bilingual="skipped",
+                reason=str(exc),
+            )
+            return en_html
 
     def _compose_v7(
         self,
@@ -367,6 +408,7 @@ class HtmlComposer:
             curated,
             articles,
             week_range_label(window_days=self.config.fetch_window_days),
+            logger=logger,
             meta=meta,
         )
         self.write_outputs(date_label, html_body, logger)
@@ -478,6 +520,18 @@ class HtmlComposer:
             return ""
 
     @staticmethod
+    def _format_sidebar_date_zh(published_date: Optional[str]) -> str:
+        if not published_date:
+            return ""
+        try:
+            parsed = dt.datetime.fromisoformat(
+                published_date.replace("Z", "+00:00")
+            ).astimezone(dt.timezone.utc)
+            return parsed.strftime("%Y年%m月%d日")
+        except Exception:
+            return ""
+
+    @staticmethod
     def _remove_v8_azure_sidebar(result: str) -> str:
         """Remove the v8 Azure sidebar when no Azure items are available."""
         return re.sub(
@@ -553,6 +607,218 @@ class HtmlComposer:
             if len(items) >= max_items:
                 break
         return items
+
+    def _compose_chinese_section(
+        self,
+        stories: list[dict[str, Any]],
+        scanned_articles: list[Article],
+        date_label: str,
+        meta: dict[str, Any],
+    ) -> str:
+        """Render the v8_zh.html template body and return the inner CN HTML row.
+
+        Stories arrive with `title`/`summary` already replaced by Chinese text and
+        an added `date_zh` field (Translator output). The original `tag`, `url`,
+        `image`, and `published_at_iso` fields are preserved verbatim.
+        """
+        tmpl_path = TEMPLATES_DIR / "v8_zh.html"
+        raw = tmpl_path.read_text(encoding="utf-8")
+        start = raw.find(_BILINGUAL_BODY_START)
+        end = raw.find(_BILINGUAL_BODY_END)
+        if start < 0 or end < 0 or end <= start:
+            raise RuntimeError("template drift: v8_zh.html markers missing or inverted")
+        inner = raw[start + len(_BILINGUAL_BODY_START) : end]
+
+        source_count = len({article.source_name for article in scanned_articles})
+        scanned_count = len(scanned_articles)
+        selected_count = len(stories)
+
+        result = inner
+
+        hero_idx_raw = meta.get("hero_image_index", 0)
+        try:
+            hero_idx = int(hero_idx_raw)
+        except (TypeError, ValueError):
+            hero_idx = 0
+        if hero_idx < 0 or hero_idx >= len(stories):
+            hero_idx = 0
+        hero_story = stories[hero_idx] if stories else {}
+
+        headline_zh = hero_story.get("title", "") if hero_story else ""
+        tldr_zh = hero_story.get("summary", "") if hero_story else ""
+
+        result = result.replace("{{HERO_TITLE_ZH}}", escape_html(str(headline_zh)))
+        result = result.replace("{{TLDR_ZH}}", escape_html(str(tldr_zh)))
+        result = result.replace("{{ARTICLE_COUNT}}", str(scanned_count))
+        result = result.replace("{{SOURCE_COUNT}}", str(source_count))
+        result = result.replace("{{STORY_COUNT}}", str(selected_count))
+        result = result.replace(
+            "{{HERO_LINK}}",
+            escape_html(self._story_link(hero_story) if hero_story else "#"),
+        )
+        result = result.replace(
+            "{{HERO_IMAGE}}",
+            escape_html(
+                self._get_image_or_placeholder(self._story_for_image(hero_story))
+                if hero_story
+                else ""
+            ),
+        )
+        result = result.replace(
+            "{{HERO_IMG_TITLE_ZH}}",
+            escape_html(truncate_text(hero_story.get("title", ""), 80)),
+        )
+        result = result.replace(
+            "{{HERO_IMG_SOURCE}}", escape_html(hero_story.get("source", ""))
+        )
+        result = result.replace(
+            "{{HERO_IMG_DATE_ZH}}",
+            escape_html(hero_story.get("date_zh", "") or date_label),
+        )
+
+        card_pool = [s for i, s in enumerate(stories) if i != hero_idx]
+        for i in range(V8_FEATURED_CARDS):
+            prefix = "C%d" % (i + 1)
+            if i < len(card_pool):
+                story = card_pool[i]
+                tag_upper = (story.get("tag") or "QUICK").upper()
+                tag_color = "#" + TAG_PLACEHOLDER_COLORS.get(tag_upper, "6B7280")
+                result = result.replace(
+                    "{{%s_LINK}}" % prefix,
+                    escape_html(self._story_link(story)),
+                )
+                result = result.replace(
+                    "{{%s_IMAGE}}" % prefix,
+                    escape_html(
+                        self._get_image_or_placeholder(self._story_for_image(story))
+                    ),
+                )
+                result = result.replace("{{%s_TAG}}" % prefix, escape_html(tag_upper))
+                result = result.replace("{{%s_TAG_COLOR}}" % prefix, tag_color)
+                result = result.replace(
+                    "{{%s_TITLE_ZH}}" % prefix,
+                    escape_html(story.get("title", "")),
+                )
+                result = result.replace(
+                    "{{%s_DATE_ZH}}" % prefix,
+                    escape_html(story.get("date_zh", "") or ""),
+                )
+                result = result.replace(
+                    "{{%s_TIME}}" % prefix,
+                    str(story.get("read_time_minutes", 3)),
+                )
+            else:
+                result = result.replace("{{%s_LINK}}" % prefix, "#")
+                result = result.replace("{{%s_IMAGE}}" % prefix, "")
+                result = result.replace("{{%s_TAG}}" % prefix, "")
+                result = result.replace("{{%s_TAG_COLOR}}" % prefix, "#6B7280")
+                result = result.replace("{{%s_TITLE_ZH}}" % prefix, "")
+                result = result.replace("{{%s_DATE_ZH}}" % prefix, "")
+                result = result.replace("{{%s_TIME}}" % prefix, "")
+
+        quick_pool = card_pool[V8_FEATURED_CARDS:]
+        for i in range(V8_QUICK_READS):
+            prefix = "QR%d" % (i + 1)
+            if i < len(quick_pool):
+                story = quick_pool[i]
+                result = result.replace(
+                    "{{%s_LINK}}" % prefix,
+                    escape_html(self._story_link(story)),
+                )
+                result = result.replace(
+                    "{{%s_TITLE_ZH}}" % prefix,
+                    escape_html(story.get("title", "")),
+                )
+                result = result.replace(
+                    "{{%s_DATE_ZH}}" % prefix,
+                    escape_html(story.get("date_zh", "") or ""),
+                )
+            else:
+                result = result.replace("{{%s_LINK}}" % prefix, "#")
+                result = result.replace("{{%s_TITLE_ZH}}" % prefix, "")
+                result = result.replace("{{%s_DATE_ZH}}" % prefix, "")
+
+        sidebar_items = self._extract_azure_sidebar(scanned_articles, max_items=6)
+        cn_title_by_link = {
+            self._story_link(s): s.get("title", "")
+            for s in stories
+            if self._story_link(s) != "#"
+        }
+        cn_sidebar_items = []
+        for raw_item in sidebar_items:
+            link = raw_item.get("link", "")
+            cn_title = cn_title_by_link.get(link) or raw_item.get("title", "")
+            published_iso = raw_item.get("published_date") or raw_item.get("date_iso")
+            if not published_iso:
+                for art in scanned_articles:
+                    if art.link == link:
+                        published_iso = art.published_date
+                        break
+            cn_date = self._format_sidebar_date_zh(published_iso)
+            cn_sidebar_items.append(
+                {
+                    "link": link,
+                    "title": cn_title,
+                    "date": cn_date,
+                    "badge": raw_item.get("badge", "AZURE"),
+                }
+            )
+        for i in range(6):
+            prefix = "AZ%d" % (i + 1)
+            if i < len(cn_sidebar_items):
+                item = cn_sidebar_items[i]
+                badge = (item.get("badge") or "AZURE").upper()
+                badge_color = "#" + _AZ_BADGE_COLORS.get(badge, "0078D4")
+                result = result.replace("{{%s_BADGE}}" % prefix, escape_html(badge))
+                result = result.replace("{{%s_BADGE_COLOR}}" % prefix, badge_color)
+                result = result.replace(
+                    "{{%s_LINK}}" % prefix, escape_html(item["link"])
+                )
+                result = result.replace(
+                    "{{%s_TITLE}}" % prefix, escape_html(item["title"])
+                )
+                result = result.replace(
+                    "{{%s_DATE}}" % prefix, escape_html(item["date"])
+                )
+            else:
+                result = result.replace("{{%s_BADGE}}" % prefix, "")
+                result = result.replace("{{%s_BADGE_COLOR}}" % prefix, "#0078D4")
+                result = result.replace("{{%s_LINK}}" % prefix, "#")
+                result = result.replace("{{%s_TITLE}}" % prefix, "")
+                result = result.replace("{{%s_DATE}}" % prefix, "")
+
+        result = re.sub(r'<img[^>]+src=""[^>]*/?\s*>', "", result)
+        return result
+
+    @staticmethod
+    def _splice_chinese_section(en_html: str, cn_section: str) -> str:
+        """Insert the CN section directly before the EN footer marker.
+
+        Pre-asserts the footer marker appears exactly once to detect template drift
+        (test #14). Any other count raises RuntimeError("template drift").
+        """
+        count = en_html.count(_FOOTER_MARKER)
+        if count != 1:
+            raise RuntimeError(
+                "template drift: footer marker count=%d, expected 1" % count
+            )
+        return en_html.replace(_FOOTER_MARKER, cn_section + _FOOTER_MARKER, 1)
+
+    @staticmethod
+    def _story_link(story: dict[str, Any]) -> str:
+        """Accept either `link` (v8 EN) or `url` (test fixture / translator output)."""
+        return story.get("link") or story.get("url") or "#"
+
+    @staticmethod
+    def _story_for_image(story: dict[str, Any]) -> dict[str, Any]:
+        """Normalize story so `_get_image_or_placeholder` finds `image_url`."""
+        if story.get("image_url"):
+            return story
+        if story.get("image"):
+            shimmed = dict(story)
+            shimmed["image_url"] = story["image"]
+            return shimmed
+        return story
 
     @staticmethod
     def _load_latest_artifact(prefix: str) -> Path:

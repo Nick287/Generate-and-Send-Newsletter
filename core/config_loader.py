@@ -29,6 +29,7 @@ from core.paths import (
     DEFAULT_CURATE_PROMPT_VERSION,
     curate_prompt_path,
     template_path,
+    translate_prompt_path,
 )
 from core.utils import log_event, mask_recipients
 
@@ -52,6 +53,12 @@ class ConfigLoader:
         tmpl_file = template_path(config.template_version)
         if not tmpl_file.exists():
             raise FileNotFoundError("Missing template file: %s" % tmpl_file)
+        if config.compose_bilingual:
+            translate_file = translate_prompt_path(config.translate_prompt_version)
+            if not translate_file.exists():
+                raise FileNotFoundError(
+                    "Missing translate prompt file: %s" % translate_file
+                )
         log_event(
             logger,
             logging.INFO,
@@ -61,7 +68,9 @@ class ConfigLoader:
             recipients_masked=mask_recipients(config.recipients),
             llm_endpoint=config.llm_endpoint,
         )
-        print("    Loaded %d feeds, %d recipients" % (len(feeds), len(config.recipients)))
+        print(
+            "    Loaded %d feeds, %d recipients" % (len(feeds), len(config.recipients))
+        )
         return config, feeds
 
     # ── internal helpers | 内部工具方法 ─────────────────────────────────────
@@ -79,13 +88,17 @@ class ConfigLoader:
         校验 feeds.yaml 结构并返回类型化的 FeedSource 列表。
         """
         if not isinstance(doc, dict) or not doc:
-            raise ValueError("feeds.yaml must be a non-empty mapping of category -> feeds")
+            raise ValueError(
+                "feeds.yaml must be a non-empty mapping of category -> feeds"
+            )
         sources: list[FeedSource] = []
         for category, feeds in doc.items():
             if not isinstance(category, str) or not category.strip():
                 raise ValueError("feeds.yaml categories must be non-empty strings")
             if not isinstance(feeds, list):
-                raise ValueError("feeds.yaml category %s must contain a list" % category)
+                raise ValueError(
+                    "feeds.yaml category %s must contain a list" % category
+                )
             for index, feed in enumerate(feeds):
                 if not isinstance(feed, dict):
                     raise ValueError(
@@ -95,11 +108,13 @@ class ConfigLoader:
                 url = feed.get("url")
                 if not isinstance(name, str) or not name.strip():
                     raise ValueError(
-                        "feeds.yaml entry %s[%s] is missing a valid name" % (category, index)
+                        "feeds.yaml entry %s[%s] is missing a valid name"
+                        % (category, index)
                     )
                 if not isinstance(url, str) or not url.strip():
                     raise ValueError(
-                        "feeds.yaml entry %s[%s] is missing a valid url" % (category, index)
+                        "feeds.yaml entry %s[%s] is missing a valid url"
+                        % (category, index)
                     )
                 max_items = feed.get("max_items")
                 if max_items is not None:
@@ -133,6 +148,12 @@ class ConfigLoader:
         fetch = doc.get("fetch", {})
         enrich = doc.get("enrich", {})
         cleanup = doc.get("cleanup", {})
+        template_section = doc.get("template")
+        if not isinstance(template_section, dict):
+            template_section = {}
+        compose_section = doc.get("compose")
+        if not isinstance(compose_section, dict):
+            compose_section = {}
 
         # ── Email: YAML first, then env-var overrides ──────────────────────
         # 邮件配置：先读YAML，再用环境变量覆盖
@@ -143,7 +164,9 @@ class ConfigLoader:
         if env_to.strip():
             recipients = [a.strip() for a in env_to.split(",") if a.strip()]
 
-        acs_sender = email_cfg.get("acs_sender", doc.get("acs_sender", DEFAULT_ACS_SENDER))
+        acs_sender = email_cfg.get(
+            "acs_sender", doc.get("acs_sender", DEFAULT_ACS_SENDER)
+        )
         acs_connection_string = (
             os.environ.get("ACS_CONNECTION_STRING", "")
             or email_cfg.get("acs_connection_string", "")
@@ -158,11 +181,11 @@ class ConfigLoader:
 
         # SMTP settings: env vars override YAML (compatible with .env)
         # SMTP设置：环境变量覆盖YAML（兼容 .env 文件）
-        smtp_host = os.environ.get("SMTP_HOST", "") or email_cfg.get("smtp_host", "") or ""
+        smtp_host = (
+            os.environ.get("SMTP_HOST", "") or email_cfg.get("smtp_host", "") or ""
+        )
         smtp_port = int(
-            os.environ.get("SMTP_PORT", "")
-            or email_cfg.get("smtp_port", 587)
-            or 587
+            os.environ.get("SMTP_PORT", "") or email_cfg.get("smtp_port", 587) or 587
         )
         smtp_user = (
             os.environ.get("SENDER_USERNAME", "")
@@ -220,9 +243,17 @@ class ConfigLoader:
         # Append /chat/completions if endpoint looks like a bare Azure OpenAI base URL
         # 如果端点看起来是裸Azure OpenAI基础URL，自动追加 /chat/completions
         model = llm.get("model", DEFAULT_LLM_MODEL)
-        if endpoint and "cognitiveservices.azure.com" in endpoint and "/chat/completions" not in endpoint:
+        if (
+            endpoint
+            and "cognitiveservices.azure.com" in endpoint
+            and "/chat/completions" not in endpoint
+        ):
             deployment = model  # use configured model name as deployment name
-            endpoint = endpoint.rstrip("/") + "/openai/deployments/%s/chat/completions?api-version=2024-12-01-preview" % deployment
+            endpoint = (
+                endpoint.rstrip("/")
+                + "/openai/deployments/%s/chat/completions?api-version=2024-12-01-preview"
+                % deployment
+            )
         api_key = (
             os.environ.get("AZURE_OPENAI_TOKEN", "")
             or os.environ.get("LLM_API_KEY", "")
@@ -283,7 +314,6 @@ class ConfigLoader:
 
         # ── Template / prompt versioning (zero-behavior-change defaults) ──────
         # 模板 / prompt 版本选择（默认保持现有行为不变）
-        template_section = doc.get("template") if isinstance(doc.get("template"), dict) else {}
         template_version = (
             os.environ.get("NEWSLETTER_TEMPLATE_VERSION", "").strip()
             or str(template_section.get("version") or "").strip()
@@ -299,6 +329,15 @@ class ConfigLoader:
         # 通过路径辅助函数校验（不安全输入会抛 ValueError）。
         template_path(template_version)
         curate_prompt_path(curate_prompt_version)
+
+        # ── Compose / bilingual section ───────────────────────────────────────
+        # 双语合成选项（默认开启；缺失整段时回落到默认）
+        compose_bilingual_raw = compose_section.get("bilingual", True)
+        compose_bilingual = bool(compose_bilingual_raw)
+        translate_prompt_version = (
+            str(compose_section.get("translate_prompt_version") or "").strip() or "v1"
+        )
+        translate_prompt_path(translate_prompt_version)
 
         return AppConfig(
             issue_number=issue_number,
@@ -334,4 +373,6 @@ class ConfigLoader:
             from_alias=from_alias,
             template_version=template_version,
             curate_prompt_version=curate_prompt_version,
+            compose_bilingual=compose_bilingual,
+            translate_prompt_version=translate_prompt_version,
         )

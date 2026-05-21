@@ -1,0 +1,242 @@
+<!--
+  v8_zh.html — Simplified-Chinese mirror of v8.html.
+  Composer extracts the body between BILINGUAL_BODY_START/END markers
+  and splices it into the EN template just before the footer.
+  Layout, colors, dimensions, and image dims mirror v8.html exactly.
+-->
+<!--BILINGUAL_BODY_START-->
+
+  <!-- ===== CN DIVIDER ===== -->
+  <tr><td style="padding:24px 24px 8px;">
+    <div style="border-top:2px solid #1a1a2e;"></div>
+  </td></tr>
+  <tr><td style="padding:8px 24px 16px;">
+    <span style="font-size:12px;font-weight:700;color:#1a1a2e;text-transform:uppercase;letter-spacing:1px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">中文版 · Chinese Version</span>
+  </td></tr>
+
+  <!-- ===== CN TOP BAR ===== -->
+  <tr><td bgcolor="#1a1a2e" style="background:#1a1a2e;padding:12px 24px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td><span style="font-size:18px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">AI 每周精选</span></td>
+    </tr></table>
+  </td></tr>
+
+  <!-- ===== CN HERO ZONE ===== -->
+  <tr><td style="background:#ffffff;padding:0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td class="hero-text" valign="top" width="420" style="width:420px;padding:28px 0 28px 24px;vertical-align:top;">
+          <div style="font-size:11px;font-weight:700;color:#0078D4;text-transform:uppercase;letter-spacing:1.2px;padding-bottom:8px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">本周要闻</div>
+          <div style="font-size:22px;font-weight:800;color:#1a1a2e;line-height:28px;letter-spacing:-0.3px;padding-bottom:12px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{HERO_TITLE_ZH}}</div>
+          <div style="font-size:13px;color:#4a4a4a;line-height:20px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{TLDR_ZH}}</div>
+          <div style="padding-top:14px;">
+            <span style="font-size:11px;color:#86868b;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">扫描 {{ARTICLE_COUNT}} 篇文章 · 覆盖 {{SOURCE_COUNT}} 个来源 · 精选 {{STORY_COUNT}} 条</span>
+          </div>
+        </td>
+        <td class="hero-img" valign="top" width="280" style="width:280px;padding:28px 24px 28px 16px;vertical-align:top;">
+          <a href="{{HERO_LINK}}">
+            <img src="{{HERO_IMAGE}}" width="260" alt="" style="width:260px;height:auto;display:block;border-radius:8px;object-fit:cover;" onerror="this.style.display='none'">
+          </a>
+          <div style="font-size:10px;color:#86868b;padding-top:6px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{HERO_IMG_TITLE_ZH}} · {{HERO_IMG_SOURCE}} · {{HERO_IMG_DATE_ZH}}</div>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+
+  <!-- ===== INNER DIVIDER ===== -->
+  <tr><td style="padding:0 24px;"><div style="border-top:2px solid #1a1a2e;"></div></td></tr>
+
+  <!-- ===== SECTION LABEL ===== -->
+  <tr><td style="padding:16px 24px 8px;">
+    <span style="font-size:12px;font-weight:700;color:#1a1a2e;text-transform:uppercase;letter-spacing:1px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">最新文章</span>
+  </td></tr>
+
+  <!-- ===== CN MAIN CONTENT ===== -->
+  <tr><td style="padding:0 16px;" class="mobile-pad">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td class="col-main" valign="top" width="468" style="width:468px;vertical-align:top;">
+
+          <!-- ROW 1 -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td class="card-col" valign="top" width="148" style="width:148px;padding:8px;">
+                <a href="{{C1_LINK}}">
+                  <img src="{{C1_IMAGE}}" width="148" height="95" alt="" style="width:148px;height:95px;display:block;border-radius:6px;object-fit:cover;background:#eee;" onerror="this.style.display='none'">
+                </a>
+                <div style="padding-top:6px;">
+                  <div style="font-size:9px;font-weight:600;color:{{C1_TAG_COLOR}};text-transform:uppercase;letter-spacing:0.5px;">{{C1_TAG}}</div>
+                  <div style="font-size:12px;font-weight:700;color:#1a1a2e;line-height:16px;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;"><a href="{{C1_LINK}}" style="color:#1a1a2e;text-decoration:none;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C1_TITLE_ZH}}</a></div>
+                  <div style="font-size:10px;color:#86868b;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C1_DATE_ZH}} · {{C1_TIME}} 分钟</div>
+                </div>
+              </td>
+              <td class="card-col" valign="top" width="148" style="width:148px;padding:8px;">
+                <a href="{{C2_LINK}}">
+                  <img src="{{C2_IMAGE}}" width="148" height="95" alt="" style="width:148px;height:95px;display:block;border-radius:6px;object-fit:cover;background:#eee;" onerror="this.style.display='none'">
+                </a>
+                <div style="padding-top:6px;">
+                  <div style="font-size:9px;font-weight:600;color:{{C2_TAG_COLOR}};text-transform:uppercase;letter-spacing:0.5px;">{{C2_TAG}}</div>
+                  <div style="font-size:12px;font-weight:700;color:#1a1a2e;line-height:16px;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;"><a href="{{C2_LINK}}" style="color:#1a1a2e;text-decoration:none;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C2_TITLE_ZH}}</a></div>
+                  <div style="font-size:10px;color:#86868b;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C2_DATE_ZH}} · {{C2_TIME}} 分钟</div>
+                </div>
+              </td>
+              <td class="card-col" valign="top" width="148" style="width:148px;padding:8px;">
+                <a href="{{C3_LINK}}">
+                  <img src="{{C3_IMAGE}}" width="148" height="95" alt="" style="width:148px;height:95px;display:block;border-radius:6px;object-fit:cover;background:#eee;" onerror="this.style.display='none'">
+                </a>
+                <div style="padding-top:6px;">
+                  <div style="font-size:9px;font-weight:600;color:{{C3_TAG_COLOR}};text-transform:uppercase;letter-spacing:0.5px;">{{C3_TAG}}</div>
+                  <div style="font-size:12px;font-weight:700;color:#1a1a2e;line-height:16px;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;"><a href="{{C3_LINK}}" style="color:#1a1a2e;text-decoration:none;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C3_TITLE_ZH}}</a></div>
+                  <div style="font-size:10px;color:#86868b;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C3_DATE_ZH}} · {{C3_TIME}} 分钟</div>
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <!-- ROW 2 -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td class="card-col" valign="top" width="148" style="width:148px;padding:8px;">
+                <a href="{{C4_LINK}}">
+                  <img src="{{C4_IMAGE}}" width="148" height="95" alt="" style="width:148px;height:95px;display:block;border-radius:6px;object-fit:cover;background:#eee;" onerror="this.style.display='none'">
+                </a>
+                <div style="padding-top:6px;">
+                  <div style="font-size:9px;font-weight:600;color:{{C4_TAG_COLOR}};text-transform:uppercase;letter-spacing:0.5px;">{{C4_TAG}}</div>
+                  <div style="font-size:12px;font-weight:700;color:#1a1a2e;line-height:16px;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;"><a href="{{C4_LINK}}" style="color:#1a1a2e;text-decoration:none;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C4_TITLE_ZH}}</a></div>
+                  <div style="font-size:10px;color:#86868b;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C4_DATE_ZH}} · {{C4_TIME}} 分钟</div>
+                </div>
+              </td>
+              <td class="card-col" valign="top" width="148" style="width:148px;padding:8px;">
+                <a href="{{C5_LINK}}">
+                  <img src="{{C5_IMAGE}}" width="148" height="95" alt="" style="width:148px;height:95px;display:block;border-radius:6px;object-fit:cover;background:#eee;" onerror="this.style.display='none'">
+                </a>
+                <div style="padding-top:6px;">
+                  <div style="font-size:9px;font-weight:600;color:{{C5_TAG_COLOR}};text-transform:uppercase;letter-spacing:0.5px;">{{C5_TAG}}</div>
+                  <div style="font-size:12px;font-weight:700;color:#1a1a2e;line-height:16px;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;"><a href="{{C5_LINK}}" style="color:#1a1a2e;text-decoration:none;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C5_TITLE_ZH}}</a></div>
+                  <div style="font-size:10px;color:#86868b;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C5_DATE_ZH}} · {{C5_TIME}} 分钟</div>
+                </div>
+              </td>
+              <td class="card-col" valign="top" width="148" style="width:148px;padding:8px;">
+                <a href="{{C6_LINK}}">
+                  <img src="{{C6_IMAGE}}" width="148" height="95" alt="" style="width:148px;height:95px;display:block;border-radius:6px;object-fit:cover;background:#eee;" onerror="this.style.display='none'">
+                </a>
+                <div style="padding-top:6px;">
+                  <div style="font-size:9px;font-weight:600;color:{{C6_TAG_COLOR}};text-transform:uppercase;letter-spacing:0.5px;">{{C6_TAG}}</div>
+                  <div style="font-size:12px;font-weight:700;color:#1a1a2e;line-height:16px;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;"><a href="{{C6_LINK}}" style="color:#1a1a2e;text-decoration:none;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C6_TITLE_ZH}}</a></div>
+                  <div style="font-size:10px;color:#86868b;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C6_DATE_ZH}} · {{C6_TIME}} 分钟</div>
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <!-- ROW 3 -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td class="card-col" valign="top" width="148" style="width:148px;padding:8px;">
+                <a href="{{C7_LINK}}">
+                  <img src="{{C7_IMAGE}}" width="148" height="95" alt="" style="width:148px;height:95px;display:block;border-radius:6px;object-fit:cover;background:#eee;" onerror="this.style.display='none'">
+                </a>
+                <div style="padding-top:6px;">
+                  <div style="font-size:9px;font-weight:600;color:{{C7_TAG_COLOR}};text-transform:uppercase;letter-spacing:0.5px;">{{C7_TAG}}</div>
+                  <div style="font-size:12px;font-weight:700;color:#1a1a2e;line-height:16px;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;"><a href="{{C7_LINK}}" style="color:#1a1a2e;text-decoration:none;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C7_TITLE_ZH}}</a></div>
+                  <div style="font-size:10px;color:#86868b;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C7_DATE_ZH}} · {{C7_TIME}} 分钟</div>
+                </div>
+              </td>
+              <td class="card-col" valign="top" width="148" style="width:148px;padding:8px;">
+                <a href="{{C8_LINK}}">
+                  <img src="{{C8_IMAGE}}" width="148" height="95" alt="" style="width:148px;height:95px;display:block;border-radius:6px;object-fit:cover;background:#eee;" onerror="this.style.display='none'">
+                </a>
+                <div style="padding-top:6px;">
+                  <div style="font-size:9px;font-weight:600;color:{{C8_TAG_COLOR}};text-transform:uppercase;letter-spacing:0.5px;">{{C8_TAG}}</div>
+                  <div style="font-size:12px;font-weight:700;color:#1a1a2e;line-height:16px;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;"><a href="{{C8_LINK}}" style="color:#1a1a2e;text-decoration:none;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C8_TITLE_ZH}}</a></div>
+                  <div style="font-size:10px;color:#86868b;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C8_DATE_ZH}} · {{C8_TIME}} 分钟</div>
+                </div>
+              </td>
+              <td class="card-col" valign="top" width="148" style="width:148px;padding:8px;">
+                <a href="{{C9_LINK}}">
+                  <img src="{{C9_IMAGE}}" width="148" height="95" alt="" style="width:148px;height:95px;display:block;border-radius:6px;object-fit:cover;background:#eee;" onerror="this.style.display='none'">
+                </a>
+                <div style="padding-top:6px;">
+                  <div style="font-size:9px;font-weight:600;color:{{C9_TAG_COLOR}};text-transform:uppercase;letter-spacing:0.5px;">{{C9_TAG}}</div>
+                  <div style="font-size:12px;font-weight:700;color:#1a1a2e;line-height:16px;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;"><a href="{{C9_LINK}}" style="color:#1a1a2e;text-decoration:none;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C9_TITLE_ZH}}</a></div>
+                  <div style="font-size:10px;color:#86868b;padding-top:3px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{C9_DATE_ZH}} · {{C9_TIME}} 分钟</div>
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <!-- QUICK READS -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr><td style="padding:12px 8px 6px;">
+              <span style="font-size:11px;font-weight:700;color:#1a1a2e;text-transform:uppercase;letter-spacing:0.8px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">速读</span>
+            </td></tr>
+            <tr><td style="padding:4px 8px;border-bottom:1px solid #f0f0f0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+                <td><a href="{{QR1_LINK}}" style="font-size:12px;font-weight:600;color:#1a1a2e;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{QR1_TITLE_ZH}}</a></td>
+                <td align="right" width="60"><span style="font-size:10px;color:#86868b;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{QR1_DATE_ZH}}</span></td>
+              </tr></table>
+            </td></tr>
+            <tr><td style="padding:4px 8px;border-bottom:1px solid #f0f0f0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+                <td><a href="{{QR2_LINK}}" style="font-size:12px;font-weight:600;color:#1a1a2e;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{QR2_TITLE_ZH}}</a></td>
+                <td align="right" width="60"><span style="font-size:10px;color:#86868b;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{QR2_DATE_ZH}}</span></td>
+              </tr></table>
+            </td></tr>
+            <tr><td style="padding:4px 8px;border-bottom:1px solid #f0f0f0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+                <td><a href="{{QR3_LINK}}" style="font-size:12px;font-weight:600;color:#1a1a2e;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{QR3_TITLE_ZH}}</a></td>
+                <td align="right" width="60"><span style="font-size:10px;color:#86868b;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{QR3_DATE_ZH}}</span></td>
+              </tr></table>
+            </td></tr>
+          </table>
+
+        </td>
+
+        <!-- GUTTER -->
+        <td class="col-gutter" width="12" style="width:12px;">&nbsp;</td>
+
+        <!-- SIDEBAR -->
+        <td class="col-sidebar" valign="top" width="188" style="width:188px;vertical-align:top;padding:8px;background:#fafafa;border-radius:8px;">
+          <div style="font-size:11px;font-weight:700;color:#1a1a2e;text-transform:uppercase;letter-spacing:0.8px;padding-bottom:10px;border-bottom:2px solid #0078D4;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">Azure 更新</div>
+
+          <div style="padding:10px 0;border-bottom:1px solid #e8e8e8;">
+            <div style="font-size:9px;font-weight:600;color:{{AZ1_BADGE_COLOR}};text-transform:uppercase;">&#9679; {{AZ1_BADGE}}</div>
+            <a href="{{AZ1_LINK}}" style="font-size:11px;font-weight:600;color:#1a1a2e;line-height:15px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{AZ1_TITLE}}</a>
+            <div style="font-size:9px;color:#86868b;padding-top:2px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{AZ1_DATE}}</div>
+          </div>
+
+          <div style="padding:10px 0;border-bottom:1px solid #e8e8e8;">
+            <div style="font-size:9px;font-weight:600;color:{{AZ2_BADGE_COLOR}};text-transform:uppercase;">&#9679; {{AZ2_BADGE}}</div>
+            <a href="{{AZ2_LINK}}" style="font-size:11px;font-weight:600;color:#1a1a2e;line-height:15px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{AZ2_TITLE}}</a>
+            <div style="font-size:9px;color:#86868b;padding-top:2px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{AZ2_DATE}}</div>
+          </div>
+
+          <div style="padding:10px 0;border-bottom:1px solid #e8e8e8;">
+            <div style="font-size:9px;font-weight:600;color:{{AZ3_BADGE_COLOR}};text-transform:uppercase;">&#9679; {{AZ3_BADGE}}</div>
+            <a href="{{AZ3_LINK}}" style="font-size:11px;font-weight:600;color:#1a1a2e;line-height:15px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{AZ3_TITLE}}</a>
+            <div style="font-size:9px;color:#86868b;padding-top:2px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{AZ3_DATE}}</div>
+          </div>
+
+          <div style="padding:10px 0;border-bottom:1px solid #e8e8e8;">
+            <div style="font-size:9px;font-weight:600;color:{{AZ4_BADGE_COLOR}};text-transform:uppercase;">&#9679; {{AZ4_BADGE}}</div>
+            <a href="{{AZ4_LINK}}" style="font-size:11px;font-weight:600;color:#1a1a2e;line-height:15px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{AZ4_TITLE}}</a>
+            <div style="font-size:9px;color:#86868b;padding-top:2px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{AZ4_DATE}}</div>
+          </div>
+
+          <div style="padding:10px 0;border-bottom:1px solid #e8e8e8;">
+            <div style="font-size:9px;font-weight:600;color:{{AZ5_BADGE_COLOR}};text-transform:uppercase;">&#9679; {{AZ5_BADGE}}</div>
+            <a href="{{AZ5_LINK}}" style="font-size:11px;font-weight:600;color:#1a1a2e;line-height:15px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{AZ5_TITLE}}</a>
+            <div style="font-size:9px;color:#86868b;padding-top:2px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{AZ5_DATE}}</div>
+          </div>
+
+          <div style="padding:10px 0;">
+            <div style="font-size:9px;font-weight:600;color:{{AZ6_BADGE_COLOR}};text-transform:uppercase;">&#9679; {{AZ6_BADGE}}</div>
+            <a href="{{AZ6_LINK}}" style="font-size:11px;font-weight:600;color:#1a1a2e;line-height:15px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{AZ6_TITLE}}</a>
+            <div style="font-size:9px;color:#86868b;padding-top:2px;font-family:'Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB','Source Han Sans CN','Noto Sans CJK SC',SimSun,sans-serif;">{{AZ6_DATE}}</div>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+
+<!--BILINGUAL_BODY_END-->

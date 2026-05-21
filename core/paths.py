@@ -42,6 +42,7 @@ DEFAULT_ACS_SENDER = ""
 
 # ── Path helpers | 路径工具 ─────────────────────────────────────────────────
 
+
 def fetched_path(date_label: str) -> Path:
     return DATA_DIR / ("fetched-%s.json" % date_label)
 
@@ -88,6 +89,14 @@ def curate_prompt_path(version: str = DEFAULT_CURATE_PROMPT_VERSION) -> Path:
     """
     safe = _validate_version(version, "curate prompt")
     return PROMPTS_DIR / ("curate-%s.md" % safe)
+
+
+def translate_prompt_path(version: str = "v1") -> Path:
+    """Return the translate (EN→CN) prompt path for the given version.
+    返回指定版本的中文翻译 prompt 路径。
+    """
+    safe = _validate_version(version, "translate prompt")
+    return PROMPTS_DIR / ("translate-cn-%s.md" % safe)
 
 
 def ensure_directories() -> None:

@@ -65,6 +65,7 @@ def run(
         stories,
         scanned_articles,
         week_range_label(window_days=config.fetch_window_days),
+        logger=logger,
         meta=meta or {},
     )
     composer.write_outputs(date_label, html_body, logger)

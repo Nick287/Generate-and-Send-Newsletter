@@ -92,6 +92,8 @@ def full_pipeline(args: argparse.Namespace) -> int:
     # ── Step 0: Config ───────────────────────────────────────────────────────
     ctx = step0_load_config()
     config = ctx["config"]
+    if getattr(args, "bilingual", True) is False:
+        config.compose_bilingual = False
     feeds = ctx["feeds"]
     date_label = ctx["date_label"]
     logger = ctx["logger"]
@@ -169,6 +171,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dry-run", action="store_true", help="Run the full pipeline but skip send"
     )
+    parser.add_argument(
+        "--no-bilingual",
+        action="store_false",
+        dest="bilingual",
+        default=True,
+        help="Disable the appended Simplified Chinese newsletter section",
+    )
     parser.add_argument("--to", help="Override recipient email(s), comma-separated")
     return parser.parse_args()
 
@@ -189,6 +198,8 @@ def main() -> int:
     try:
         if args.compose_only:
             ctx = step0_load_config()
+            if getattr(args, "bilingual", True) is False:
+                ctx["config"].compose_bilingual = False
             composer = HtmlComposer(ctx["config"])
             return composer.compose_only(ctx["logger"])
 
