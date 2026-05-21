@@ -13,6 +13,7 @@ import datetime as dt
 import logging
 import re
 from typing import Iterable, Optional
+from urllib.parse import urlparse
 
 import lxml.html
 import requests
@@ -76,6 +77,13 @@ def _contains_ad(body: str, ad_keywords: Iterable[str]) -> bool:
     return False
 
 
+def _http_url_or_none(url: str) -> Optional[str]:
+    parsed = urlparse(url)
+    if parsed.scheme in {"http", "https"}:
+        return url
+    return None
+
+
 def parse_html(
     html: str,
     source: FeedSource,
@@ -90,10 +98,11 @@ def parse_html(
     root = lxml.html.fromstring(html)
     wrappers = root.cssselect("div.tgme_widget_message_wrap")
     ad_kw = tuple(ad_keywords) or DEFAULT_AD_KEYWORDS
+    cap = min(source.max_items or _MAX_POSTS, _MAX_POSTS)
     articles: list[Article] = []
 
     for wrap in wrappers:
-        if len(articles) >= _MAX_POSTS:
+        if len(articles) >= cap:
             break
 
         if wrap.cssselect(".tgme_widget_message_service"):
@@ -107,6 +116,8 @@ def parse_html(
         msg = msg_nodes[0]
         data_post = msg.get("data-post") or ""
         if "/" not in data_post:
+            continue
+        if msg.get("data-view") == "pinned":
             continue
         post_id = data_post.split("/", 1)[1]
         link = f"https://t.me/{channel}/{post_id}"
@@ -126,8 +137,9 @@ def parse_html(
             style = p.get("style") or ""
             m = _BG_IMAGE_RE.search(style)
             if m:
-                image_url = m.group(1)
-                break
+                image_url = _http_url_or_none(m.group(1))
+                if image_url:
+                    break
         if not image_url:
             preview_nodes = wrap.cssselect("a.tgme_widget_message_link_preview")
             for pv in preview_nodes:
@@ -136,8 +148,9 @@ def parse_html(
                     style = img.get("style") or ""
                     m = _BG_IMAGE_RE.search(style)
                     if m:
-                        image_url = m.group(1)
-                        break
+                        image_url = _http_url_or_none(m.group(1))
+                        if image_url:
+                            break
                 if image_url:
                     break
 

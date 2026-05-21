@@ -15,6 +15,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 
@@ -45,8 +46,10 @@ class ConfigLoader:
     # ── public API ───────────────────────────────────────────────────────────
     def load(self, logger: logging.Logger) -> tuple[AppConfig, list[FeedSource]]:
         print("--- Step: Loading configuration files ---")
-        feeds = self._validate_feeds(self._load_yaml(FEEDS_FILE))
+        feeds_doc = self._load_yaml(FEEDS_FILE)
+        feeds = self._validate_feeds(feeds_doc)
         config = self._validate_config(self._load_yaml(CONFIG_FILE))
+        config.ad_keywords = self._extract_ad_keywords(feeds_doc)
         prompt_file = curate_prompt_path(config.curate_prompt_version)
         if not prompt_file.exists():
             raise FileNotFoundError("Missing prompt file: %s" % prompt_file)
@@ -137,6 +140,11 @@ class ConfigLoader:
                         "feeds.yaml entry %s[%s] (%s) has unknown kind=%r; "
                         "expected one of: rss, telegram" % (category, index, name, kind)
                     )
+                if kind == "telegram" and urlparse(url.strip()).netloc.lower() != "t.me":
+                    raise ValueError(
+                        "feeds.yaml entry %s[%s] (%s) kind=telegram requires t.me url"
+                        % (category, index, name)
+                    )
                 sources.append(
                     FeedSource(
                         category=category,
@@ -148,6 +156,17 @@ class ConfigLoader:
                     )
                 )
         return sources
+
+    @staticmethod
+    def _extract_ad_keywords(doc: Any) -> list[str]:
+        if not isinstance(doc, dict):
+            return []
+        raw = doc.get("ad_keywords", [])
+        if raw is None:
+            return []
+        if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+            raise ValueError("feeds.yaml ad_keywords must be a list of strings")
+        return [item.strip() for item in raw if item.strip()]
 
     @staticmethod
     def _validate_config(doc: Any) -> AppConfig:

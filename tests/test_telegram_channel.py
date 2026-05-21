@@ -1,9 +1,11 @@
+import datetime as dt
 import logging
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from core.feeds.telegram_channel import fetch, parse_html, DEFAULT_AD_KEYWORDS
-from core.models import FeedSource
+from core.models import AppConfig, FeedSource
 
 FIXTURE = Path(__file__).parent / "fixtures" / "telegram_synthetic_sample.html"
 
@@ -24,6 +26,39 @@ def _src(
         skip_enrich=skip_enrich,
         max_items=max_items,
         kind=kind,
+    )
+
+
+def _config(ad_keywords: list[str] | None = None) -> AppConfig:
+    return AppConfig(
+        issue_number=1,
+        recipients=["qa@example.com"],
+        acs_sender="",
+        acs_connection_string="",
+        email_provider="smtp",
+        sendgrid_api_key="",
+        smtp_host="",
+        smtp_port=587,
+        smtp_user="",
+        smtp_pass="",
+        smtp_use_ssl=False,
+        llm_endpoint="https://example.com/v1/chat/completions",
+        llm_api_key="test-key",
+        llm_model="test-model",
+        llm_temperature=0.0,
+        llm_max_tokens=256,
+        llm_timeout=10,
+        fetch_window_days=1,
+        fetch_max_workers=1,
+        fetch_max_per_feed=25,
+        arxiv_cap_per_category=1,
+        fetch_fail_threshold=1.0,
+        enrich_top_candidates=1,
+        enrich_fetch_delay=0.0,
+        enrich_fetch_timeout=1,
+        enrich_max_body_chars=200,
+        cleanup_retention_days=1,
+        ad_keywords=ad_keywords or [],
     )
 
 
@@ -96,6 +131,60 @@ class TelegramChannelTests(unittest.TestCase):
         )
         self.assertLessEqual(len(articles), 20)
 
+    def test_source_max_items_can_lower_twenty_cap(self):
+        wrappers = []
+        for i in range(10):
+            wrappers.append(f"""
+              <div class="tgme_widget_message_wrap">
+                <div class="tgme_widget_message" data-post="AI_News_CN/{30000 + i}">
+                  <time datetime="2026-05-20T12:00:00+00:00">12:00</time>
+                  <div class="tgme_widget_message_text">post number {i}</div>
+                </div>
+              </div>
+            """)
+        html = "<html><body>" + "".join(wrappers) + "</body></html>"
+        articles = parse_html(
+            html, _src(max_items=5), channel="AI_News_CN", ad_keywords=DEFAULT_AD_KEYWORDS
+        )
+        self.assertEqual(len(articles), 5)
+
+    def test_data_view_pinned_messages_are_skipped(self):
+        html = """<html><body>
+          <div class="tgme_widget_message_wrap">
+            <div class="tgme_widget_message" data-post="AI_News_CN/9101" data-view="pinned">
+              <time datetime="2026-05-20T12:00:00+00:00">12:00</time>
+              <div class="tgme_widget_message_text">pinned operational notice</div>
+            </div>
+          </div>
+          <div class="tgme_widget_message_wrap">
+            <div class="tgme_widget_message" data-post="AI_News_CN/9102">
+              <time datetime="2026-05-20T12:01:00+00:00">12:01</time>
+              <div class="tgme_widget_message_text">regular news item</div>
+            </div>
+          </div>
+        </body></html>"""
+        articles = parse_html(
+            html, _src(), channel="AI_News_CN", ad_keywords=DEFAULT_AD_KEYWORDS
+        )
+        self.assertEqual(len(articles), 1)
+        self.assertIn("regular news", articles[0].raw_summary)
+
+    def test_non_http_image_urls_are_ignored(self):
+        html = """<html><body>
+          <div class="tgme_widget_message_wrap">
+            <div class="tgme_widget_message" data-post="AI_News_CN/9201">
+              <time datetime="2026-05-20T12:00:00+00:00">12:00</time>
+              <div class="tgme_widget_message_text">news with unsafe image</div>
+              <a class="tgme_widget_message_photo_wrap" style="background-image:url('javascript:alert(1)')"></a>
+            </div>
+          </div>
+        </body></html>"""
+        articles = parse_html(
+            html, _src(), channel="AI_News_CN", ad_keywords=DEFAULT_AD_KEYWORDS
+        )
+        self.assertEqual(len(articles), 1)
+        self.assertIsNone(articles[0].image_url)
+
     def test_ad_filter_strips_blacklist_substring_case_insensitive(self):
         html = """<html><body>
           <div class="tgme_widget_message_wrap">
@@ -116,6 +205,34 @@ class TelegramChannelTests(unittest.TestCase):
         )
         self.assertEqual(len(articles), 1)
         self.assertIn("DeepSeek", articles[0].raw_summary)
+
+    def test_fetch_uses_config_ad_keywords_union_with_defaults(self):
+        html = """<html><body>
+          <div class="tgme_widget_message_wrap">
+            <div class="tgme_widget_message" data-post="AI_News_CN/9301">
+              <time datetime="2026-05-20T12:00:00+00:00">12:00</time>
+              <div class="tgme_widget_message_text">Sponsored by FooBar Capital</div>
+            </div>
+          </div>
+          <div class="tgme_widget_message_wrap">
+            <div class="tgme_widget_message" data-post="AI_News_CN/9302">
+              <time datetime="2026-05-20T12:01:00+00:00">12:01</time>
+              <div class="tgme_widget_message_text">Real product news.</div>
+            </div>
+          </div>
+        </body></html>"""
+        response = Mock()
+        response.text = html
+        with patch("core.feeds.telegram_channel.request_with_retry", return_value=response):
+            articles, err = fetch(
+                _src(),
+                dt.datetime(2026, 1, 1),
+                _config(["FooBar"]),
+                self.logger,
+            )
+        self.assertIsNone(err)
+        self.assertEqual(len(articles), 1)
+        self.assertIn("Real product", articles[0].raw_summary)
 
     def test_ad_filter_custom_keywords_union_with_defaults(self):
         html = """<html><body>
