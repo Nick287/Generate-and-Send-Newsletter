@@ -8,17 +8,23 @@ from core.models import FeedSource
 FIXTURE = Path(__file__).parent / "fixtures" / "telegram_synthetic_sample.html"
 
 
-def _src(**overrides):
-    base = dict(
-        category="telegram",
-        name="AI News CN",
-        url="https://t.me/AI_News_CN",
-        skip_enrich=True,
-        max_items=20,
-        kind="telegram",
+def _src(
+    *,
+    category: str = "telegram",
+    name: str = "AI News CN",
+    url: str = "https://t.me/AI_News_CN",
+    skip_enrich: bool = True,
+    max_items: int | None = 20,
+    kind: str = "telegram",
+) -> FeedSource:
+    return FeedSource(
+        category=category,
+        name=name,
+        url=url,
+        skip_enrich=skip_enrich,
+        max_items=max_items,
+        kind=kind,
     )
-    base.update(overrides)
-    return FeedSource(**base)
 
 
 class TelegramChannelTests(unittest.TestCase):
@@ -56,8 +62,11 @@ class TelegramChannelTests(unittest.TestCase):
         with_images = [a for a in articles if a.image_url]
         self.assertGreaterEqual(len(with_images), 3)
         for a in with_images:
-            self.assertTrue(a.image_url.startswith("http"))
-            self.assertEqual(a.og_image, a.image_url)
+            image_url = a.image_url
+            self.assertIsNotNone(image_url)
+            assert image_url is not None
+            self.assertTrue(image_url.startswith("http"))
+            self.assertEqual(a.og_image, image_url)
 
     def test_skip_enrich_is_always_true(self):
         articles = parse_html(
