@@ -111,3 +111,20 @@ releases:
     url: https://github.com/open-webui/open-webui/releases.atom
   - name: Transformers
     url: https://github.com/huggingface/transformers/releases.atom
+
+ad_keywords:
+  - "oaibest"
+  - "api.oaibest"
+  - "Buy ads:"
+  - "telega.io"
+  - "推广"
+  - "广告"
+  - "代充"
+  - "🛒"
+
+telegram:
+  - name: AI News CN
+    url: https://t.me/AI_News_CN
+    kind: telegram
+    skip_enrich: true
+    max_items: 20
