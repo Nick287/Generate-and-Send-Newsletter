@@ -99,6 +99,11 @@ class ConfigLoader:
                 raise ValueError(
                     "feeds.yaml category %s must contain a list" % category
                 )
+            # Skip non-feed sidecar sections (e.g. `ad_keywords:` is a list of
+            # strings, not a list of feed dicts). Empty lists are also skipped.
+            # 跳过非订阅源的附属配置块（例如 `ad_keywords:` 是字符串列表）。
+            if not feeds or not isinstance(feeds[0], dict):
+                continue
             for index, feed in enumerate(feeds):
                 if not isinstance(feed, dict):
                     raise ValueError(
@@ -120,6 +125,18 @@ class ConfigLoader:
                 if max_items is not None:
                     max_items = int(max_items)
                 skip_enrich = bool(feed.get("skip_enrich", False))
+                kind = feed.get("kind") or "rss"
+                if not isinstance(kind, str):
+                    raise ValueError(
+                        "feeds.yaml entry %s[%s] kind must be a string"
+                        % (category, index)
+                    )
+                kind = kind.strip().lower()
+                if kind not in {"rss", "telegram"}:
+                    raise ValueError(
+                        "feeds.yaml entry %s[%s] (%s) has unknown kind=%r; "
+                        "expected one of: rss, telegram" % (category, index, name, kind)
+                    )
                 sources.append(
                     FeedSource(
                         category=category,
@@ -127,6 +144,7 @@ class ConfigLoader:
                         url=url.strip(),
                         max_items=max_items,
                         skip_enrich=skip_enrich,
+                        kind=kind,
                     )
                 )
         return sources
