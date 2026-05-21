@@ -33,8 +33,8 @@ TAG DEFINITIONS:
 - Launch: Major product launches, GA announcements, new model releases.
 
 SELECTION RULES:
-- Select 10 stories total: top 6 as featured cards (with images), remaining 4 as quick reads.
-- Aim for a mix of tags in the top 6 — at least 1 Research, 1 Platform, 1 Tools if material exists.
+- Select 13 stories total: top 9 as featured cards (with images), remaining 3 as quick reads.
+- Aim for a mix of tags in the top 9 — at least 1 Research, 1 Platform, 1 Tools if material exists.
 - Deduplicate: if two articles cover the same event, keep the better-sourced one.
 
 For each selected story, provide:

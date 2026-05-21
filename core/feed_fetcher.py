@@ -158,7 +158,16 @@ class FeedFetcher:
                 summary = strip_html(
                     str(entry.get("summary", "") or entry.get("description", ""))
                 )
+                content_value = self._entry_content_value(entry)
+                if content_value and (source.skip_enrich or len(content_value) > len(summary)):
+                    raw_summary = content_value if source.skip_enrich else truncate_text(content_value, 1200)
+                    full_text_excerpt = content_value if source.skip_enrich else ""
+                else:
+                    raw_summary = truncate_text(summary, 1200)
+                    full_text_excerpt = ""
                 rss_image = self._extract_rss_image(entry)
+                if source.skip_enrich and rss_image is None:
+                    rss_image = self._extract_image_from_html(content_value)
                 articles.append(
                     Article(
                         title=title,
@@ -168,8 +177,10 @@ class FeedFetcher:
                         published_date=(
                             published.isoformat() if published is not None else None
                         ),
-                        raw_summary=truncate_text(summary, 1200),
+                        raw_summary=raw_summary,
+                        full_text_excerpt=full_text_excerpt,
                         image_url=rss_image,
+                        skip_enrich=source.skip_enrich,
                     )
                 )
             if is_gh_releases:
@@ -250,6 +261,16 @@ class FeedFetcher:
         return pool[:1]
 
     @staticmethod
+    def _entry_content_value(entry: Any) -> str:
+        content = entry.get("content", [])
+        if not isinstance(content, list) or not content:
+            return ""
+        first = content[0]
+        if not isinstance(first, dict):
+            return ""
+        return str(first.get("value", "") or "")
+
+    @staticmethod
     def _extract_rss_image(entry: Any) -> Optional[str]:
         """Extract the best image URL from an RSS entry.
         从RSS条目中提取最佳图片URL。
@@ -303,6 +324,10 @@ class FeedFetcher:
             if isinstance(entry.get("content"), list) and entry.get("content")
             else entry.get("summary", "")
         )
+        return FeedFetcher._extract_image_from_html(content_html)
+
+    @staticmethod
+    def _extract_image_from_html(content_html: str) -> Optional[str]:
         img_matches = re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', content_html, re.I)
         for img_url in img_matches:
             if not is_bad_image_url(img_url) and img_url.startswith("http"):

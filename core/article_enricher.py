@@ -171,6 +171,8 @@ class ArticleEnricher:
         Falls back to RSS summary on failure. | 失败时回退到RSS摘要。
         """
         enriched = Article(**asdict(article))
+        if article.skip_enrich:
+            return enriched
         fallback = truncate_text(article.raw_summary, self.config.enrich_max_body_chars)
         try:
             response = request_with_retry(
