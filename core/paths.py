@@ -22,8 +22,8 @@ FEEDS_FILE = CONFIG_DIR / "feeds.yaml"
 CONFIG_FILE = CONFIG_DIR / "config.yaml"
 # Default versions kept here for backward compatibility / single source of truth.
 # 默认版本：作为向后兼容与单一真值来源。
-DEFAULT_TEMPLATE_VERSION = "v7"
-DEFAULT_CURATE_PROMPT_VERSION = "v5"
+DEFAULT_TEMPLATE_VERSION = "v8"
+DEFAULT_CURATE_PROMPT_VERSION = "v8"
 # Legacy constant retained for backward compatibility (curate-v5.md).
 # 旧常量保留以兼容历史调用。
 CURATE_PROMPT_FILE = PROMPTS_DIR / ("curate-%s.md" % DEFAULT_CURATE_PROMPT_VERSION)
