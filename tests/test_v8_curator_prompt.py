@@ -59,41 +59,61 @@ class V8CuratorPromptTests(unittest.TestCase):
 
         def fake_chat(system_prompt: str, user_prompt: str, **kwargs: object) -> str:
             captured["user_prompt"] = user_prompt
-            return json.dumps({
-                "headline": "Headline X",
-                "tldr": "TLDR Y.",
-                "hero_image_index": 0,
-                "stories": [{
-                    "title": "Article 1",
-                    "link": "https://example.com/article-1",
-                    "source": "Source 1",
-                    "summary": "Summary 1",
-                    "oneliner": "Oneliner 1",
-                    "score": 20,
-                    "read_time_minutes": 3,
-                    "image_url": None,
-                    "tag": "Platform",
-                    "published_date": "2026-04-25T12:00:00Z",
-                }],
-            })
+            return json.dumps(
+                {
+                    "headline": "Headline X",
+                    "tldr": "TLDR Y.",
+                    "hero_image_index": 0,
+                    "stories": [
+                        {
+                            "title": "Article 1",
+                            "link": "https://example.com/article-1",
+                            "source": "Source 1",
+                            "summary": "Summary 1",
+                            "oneliner": "Oneliner 1",
+                            "score": 20,
+                            "read_time_minutes": 3,
+                            "image_url": None,
+                            "tag": "Platform",
+                            "published_date": "2026-04-25T12:00:00Z",
+                        }
+                    ],
+                }
+            )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             out_path = Path(tmp_dir) / "curated-2099-01-01.json"
-            with mock.patch.object(curator.llm, "chat", side_effect=fake_chat), \
-                    mock.patch("core.content_curator.curated_path", return_value=out_path):
-                curator.curate([
-                    Article(
-                        title="Article 1",
-                        link="https://example.com/article-1",
-                        source_name="Source 1",
-                        category="azure_microsoft",
-                        published_date="2026-04-25T12:00:00Z",
-                        raw_summary="Summary 1",
-                    )
-                ], "2099-01-01")
+            with mock.patch.object(
+                curator.llm, "chat", side_effect=fake_chat
+            ), mock.patch("core.content_curator.curated_path", return_value=out_path):
+                curator.curate(
+                    [
+                        Article(
+                            title="Article 1",
+                            link="https://example.com/article-1",
+                            source_name="Source 1",
+                            category="azure_microsoft",
+                            published_date="2026-04-25T12:00:00Z",
+                            raw_summary="Summary 1",
+                        )
+                    ],
+                    "2099-01-01",
+                )
 
         self.assertIn("required JSON object", captured["user_prompt"])
         self.assertNotIn("flat JSON array", captured["user_prompt"])
+
+
+class V8CuratorPromptBudgetTests(unittest.TestCase):
+    """Lock the v8 prompt story-budget contract: 13 total, top 9 as cards."""
+
+    def test_v8_prompt_file_declares_thirteen_stories_top_nine_cards(self) -> None:
+        prompt_path = ROOT / "prompts" / "curate-v8.md"
+        raw = prompt_path.read_text(encoding="utf-8")
+        self.assertIn("13 stories total", raw)
+        self.assertIn("top 9", raw)
+        self.assertNotIn("Select 10 stories total", raw)
+        self.assertNotIn("remaining 4 as quick reads", raw)
 
 
 if __name__ == "__main__":
