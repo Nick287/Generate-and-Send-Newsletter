@@ -20,6 +20,7 @@ class FeedSource:
     url: str
     max_items: Optional[int] = None
     skip_enrich: bool = False
+    kind: str = "rss"
 
 
 @dataclass
