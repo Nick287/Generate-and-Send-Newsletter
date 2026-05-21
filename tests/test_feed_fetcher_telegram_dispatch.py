@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from core.feed_fetcher import FeedFetcher
-from core.models import FeedSource
+from core.models import AppConfig, FeedSource
 
 
 def _src(kind: str, name: str):
@@ -20,13 +20,41 @@ def _src(kind: str, name: str):
     )
 
 
+def _config() -> AppConfig:
+    return AppConfig(
+        issue_number=1,
+        recipients=[],
+        acs_sender="",
+        acs_connection_string="",
+        email_provider="smtp",
+        sendgrid_api_key="",
+        smtp_host="",
+        smtp_port=587,
+        smtp_user="",
+        smtp_pass="",
+        smtp_use_ssl=False,
+        llm_endpoint="",
+        llm_api_key="",
+        llm_model="",
+        llm_temperature=0.0,
+        llm_max_tokens=1,
+        llm_timeout=1,
+        fetch_window_days=1,
+        fetch_max_workers=1,
+        fetch_max_per_feed=25,
+        arxiv_cap_per_category=1,
+        fetch_fail_threshold=1.0,
+        enrich_top_candidates=1,
+        enrich_fetch_delay=0.0,
+        enrich_fetch_timeout=1,
+        enrich_max_body_chars=1,
+        cleanup_retention_days=1,
+    )
+
+
 class FeedFetcherDispatchTests(unittest.TestCase):
     def setUp(self):
-        class _Cfg:
-            ad_keywords = None
-            fetch_max_per_feed = 25
-
-        self.fetcher = FeedFetcher(_Cfg(), logging.getLogger("test"))
+        self.fetcher = FeedFetcher(_config(), logging.getLogger("test"))
 
     def test_telegram_kind_calls_telegram_fetch(self):
         sentinel = ([], None)
