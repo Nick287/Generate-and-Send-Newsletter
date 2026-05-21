@@ -68,3 +68,5 @@ Example (abbreviated):
     {"title": "...", "link": "...", "source": "...", "summary": "...", "oneliner": "...", "score": 19, "read_time_minutes": 3, "image_url": null, "tag": "Platform", "published_date": "2026-04-22T00:00:00Z"}
   ]
 }
+
+NOTE ON TELEGRAM SOURCES: Posts from `kind: telegram` feeds (e.g. "AI News CN") are short-form Chinese-language updates. Treat them as primary signals on the China AI ecosystem (DeepSeek, Qwen, Moonshot, GLM, etc.) and apply the same scoring rubric. Quality threshold: include only if score ≥ 18/25.
