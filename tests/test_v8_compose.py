@@ -76,6 +76,17 @@ def _sample_stories(n: int = 8) -> list[dict]:
     return out
 
 
+def _azure_article(title: str = "Generally available: Azure AI service update") -> Article:
+    return Article(
+        title=title,
+        link="https://azure.microsoft.com/updates/example",
+        source_name="Azure Updates Feed",
+        category="azure_microsoft",
+        published_date="2026-04-25T12:00:00Z",
+        raw_summary="Azure update details.",
+    )
+
+
 class V8RenderTests(unittest.TestCase):
     def test_v8_render_no_unresolved_placeholders(self) -> None:
         config = _stub_config("v8")
@@ -107,6 +118,25 @@ class V8RenderTests(unittest.TestCase):
         unresolved = re.findall(r"\{\{[A-Z0-9_]+\}\}", html)
         self.assertEqual(unresolved, [])
         self.assertIn("Story 1 title", html)
+
+    def test_v8_hides_azure_sidebar_when_no_azure_items(self) -> None:
+        config = _stub_config("v8")
+        composer = HtmlComposer(config)
+        html = composer.compose(_sample_stories(8), [], "Apr 21 – Apr 27, 2026", meta={})
+        self.assertNotIn("Azure Updates", html)
+
+    def test_v8_renders_azure_sidebar_when_items_exist(self) -> None:
+        config = _stub_config("v8")
+        composer = HtmlComposer(config)
+        html = composer.compose(
+            _sample_stories(8),
+            [_azure_article()],
+            "Apr 21 – Apr 27, 2026",
+            meta={},
+        )
+        self.assertIn("Azure Updates", html)
+        self.assertIn("Azure AI service update", html)
+        self.assertIn("GA", html)
 
 
 class V8CuratorParseTests(unittest.TestCase):
@@ -143,7 +173,6 @@ class V8CuratorParseTests(unittest.TestCase):
         stories, meta = curator._normalize_payload(payload)
         self.assertEqual(meta, {})
         self.assertEqual(len(stories), 1)
-
 
 class SubjectFormatTests(unittest.TestCase):
     """Ensure email subject is professional: no emoji, no 'v8', no Issue marker."""

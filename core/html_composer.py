@@ -243,6 +243,11 @@ class HtmlComposer:
 
         # Azure sidebar AZ1..AZ6 | Azure 侧边栏
         sidebar_items = self._extract_azure_sidebar(scanned_articles, max_items=6)
+        if not sidebar_items:
+            result = self._remove_v8_azure_sidebar(result)
+        else:
+            for i in range(len(sidebar_items), 6):
+                result = self._remove_v8_azure_item(result, "AZ%d" % (i + 1))
         for i in range(6):
             prefix = "AZ%d" % (i + 1)
             if i < len(sidebar_items):
@@ -415,6 +420,51 @@ class HtmlComposer:
         except Exception:
             return ""
 
+    @staticmethod
+    def _remove_v8_azure_sidebar(result: str) -> str:
+        """Remove the v8 Azure sidebar when no Azure items are available."""
+        return re.sub(
+            r"\n\s*<!-- GUTTER -->\s*"
+            r'<td class="col-gutter"[^>]*>.*?</td>\s*'
+            r"<!-- SIDEBAR: Azure Updates -->\s*"
+            r'<td class="col-sidebar"[^>]*>.*?</td>',
+            "",
+            result,
+            flags=re.DOTALL,
+        )
+
+    @staticmethod
+    def _remove_v8_azure_item(result: str, prefix: str) -> str:
+        """Remove one unused v8 Azure sidebar row."""
+        return re.sub(
+            r'\n\s*<div style="padding:10px 0(?:;border-bottom:1px solid #e8e8e8)?;">\s*'
+            r'<div style="font-size:9px;[^"]*">&#9679; \{\{%s_BADGE\}\}</div>\s*'
+            r'<a href="\{\{%s_LINK\}\}"[^>]*>\{\{%s_TITLE\}\}</a>\s*'
+            r'<div style="font-size:9px;[^"]*">\{\{%s_DATE\}\}</div>\s*'
+            r"</div>" % (prefix, prefix, prefix, prefix),
+            "",
+            result,
+            flags=re.DOTALL,
+        )
+
+    @staticmethod
+    def _azure_badge(article: Article) -> str:
+        text = "%s %s" % (article.title, article.raw_summary)
+        normalized = text.lower()
+        if (
+            "generally available" in normalized
+            or "general availability" in normalized
+            or re.search(r"\bga\b", normalized)
+        ):
+            return "GA"
+        if "preview" in normalized:
+            return "PREVIEW"
+        if re.search(r"\bnew\b", normalized):
+            return "NEW"
+        if "update" in normalized or "updated" in normalized:
+            return "UPDATE"
+        return "AZURE"
+
     def _extract_azure_sidebar(
         self, scanned_articles: list[Article], max_items: int = 10
     ) -> list[dict[str, str]]:
@@ -440,6 +490,7 @@ class HtmlComposer:
                     "title": truncate_text(article.title, 80),
                     "link": article.link,
                     "date": self._format_sidebar_date(article.published_date),
+                    "badge": self._azure_badge(article),
                 }
             )
             if len(items) >= max_items:
