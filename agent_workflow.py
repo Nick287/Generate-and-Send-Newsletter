@@ -115,6 +115,14 @@ class WorkflowInput(BaseModel):
         default="",
         description="Override recipient email(s), comma-separated (覆盖收件人)",
     )
+    languages: list[str] | None = Field(
+        default=None,
+        description=(
+            "Override config.compose_languages at runtime. None = use config.yaml; "
+            '[] = force EN-only; ["zh","ko"] = fan-out to those locales. '
+            "(运行时覆盖 config.compose_languages)"
+        ),
+    )
 
 
 # ── Summary helpers | 摘要辅助函数 ───────────────────────────────────
@@ -147,7 +155,11 @@ class ConfigLoader(Executor):
     步骤0: 加载配置和 feeds。"""
 
     async def _run(
-        self, dry_run: bool, to_override: str, ctx: WorkflowContext[PipelineState]
+        self,
+        dry_run: bool,
+        to_override: str,
+        languages_override: list[str] | None,
+        ctx: WorkflowContext[PipelineState],
     ) -> None:
         await ctx.yield_output(
             AgentResponseUpdate(
@@ -158,8 +170,11 @@ class ConfigLoader(Executor):
         )
 
         result = await asyncio.to_thread(_step0_config)
+        config = result["config"]
+        if languages_override is not None:
+            config.compose_languages = list(languages_override)
         state = PipelineState(
-            config=result["config"],
+            config=config,
             feeds=result["feeds"],
             date_label=result["date_label"],
             logger=result["logger"],
@@ -172,7 +187,7 @@ class ConfigLoader(Executor):
     async def handle(
         self, input: WorkflowInput, ctx: WorkflowContext[PipelineState]
     ) -> None:
-        await self._run(input.dry_run, input.to_override, ctx)
+        await self._run(input.dry_run, input.to_override, input.languages, ctx)
 
 
 class FeedFetcher(Executor):
@@ -678,28 +693,19 @@ def _peek_languages() -> list[str]:
         return []
 
 
-def build_workflow(checkpoint_storage: InMemoryCheckpointStorage | None = None):
+def build_workflow(
+    checkpoint_storage: InMemoryCheckpointStorage | None = None,
+    languages: list[str] | None = None,
+):
     """Build (or rebuild) the workflow. A fresh instance is needed for each checkpoint resume.
     构建（或重建）工作流。每次 checkpoint 恢复都需要一个新实例。
 
-    Topology depends on ``config.compose_languages``:
-
-    * **Empty** — legacy linear chain
-      ``ConfigLoader → FeedFetcher → ArticleEnricher → StoryCurator
-      → HtmlComposer → EmailSender``.
-
-    * **Non-empty** (e.g. ``["zh", "ko"]``) — HtmlComposer fans out to
-      one ``TranslateLocale(<locale>)`` per language; all locales fan
-      in to a single ``LocaleAssembler``; the assembler forwards the
-      final composed ``PipelineState`` to ``EmailSender``::
-
-          HtmlComposer ─┬─► TranslateLocale(zh) ─┐
-                        └─► TranslateLocale(ko) ─┴─► LocaleAssembler
-                                                       │
-                                                       ▼
-                                                  EmailSender
-    """
-    languages = _peek_languages()
+    ``languages`` (when not ``None``) overrides ``config.compose_languages``
+    for graph-shape selection — used by ``--languages`` CLI flag so users
+    can request a fan-out topology without editing config.yaml. ``None``
+    falls back to ``_peek_languages()`` (which reads config at build time)."""
+    if languages is None:
+        languages = _peek_languages()
 
     builder = WorkflowBuilder(
         name="ai-weekly-digest",
