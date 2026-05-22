@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from agent_framework import (
@@ -287,11 +287,29 @@ class StoryCurator(Executor):
 
 class HtmlComposer(Executor):
     """Step 4: Compose newsletter HTML.
-    步骤4: 组合新闻简报 HTML。"""
+    步骤4: 组合新闻简报 HTML。
 
-    @handler(input=PipelineState)
+    Renders the EN body up-front and decides between two downstream shapes
+    based on ``config.compose_languages``:
+
+    * **Empty** (legacy / no translations requested) — populates
+      ``data.html_body`` with the EN HTML, runs the dry-run short-circuit
+      here, then forwards ``PipelineState`` directly to ``EmailSender``.
+
+    * **Non-empty** — writes EN HTML + shared context to ``ctx.set_state``
+      (``SS_EN_HTML``, ``SS_STORIES``, ``SS_SCANNED``, ``SS_DATE_LABEL``,
+      ``SS_META``, ``SS_DRY_RUN``, ``SS_TO_OVERRIDE``, ``SS_CONFIG``) so
+      every fan-out target sees the same snapshot, then emits a single
+      zero-field :class:`TranslateTrigger`. agent-framework dispatches it
+      to every ``TranslateLocale`` wired via ``add_fan_out_edges``; each
+      locale's result later reaches :class:`LocaleAssembler`, which owns
+      the dry-run short-circuit on the multilingual branch."""
+
+    @handler(input=PipelineState, output=PipelineState | TranslateTrigger)
     async def handle(
-        self, data: PipelineState, ctx: WorkflowContext[PipelineState]
+        self,
+        data: PipelineState,
+        ctx: WorkflowContext[PipelineState | TranslateTrigger],
     ) -> None:
         await ctx.yield_output(
             AgentResponseUpdate(
@@ -303,36 +321,55 @@ class HtmlComposer(Executor):
             )
         )
 
-        compose_out = await asyncio.to_thread(
-            _step4_compose,
-            data.config,
-            data.stories,
-            data.articles,
-            data.date_label,
-            data.logger,
-            data.curate_meta,
-        )
-        data.html_body = compose_out["html_body"]
+        languages = list(getattr(data.config, "compose_languages", []) or [])
 
-        if data.dry_run:
-            tg(_success_msg(len(data.articles), data.stories, "dry-run"))
-            await ctx.yield_output(
-                AgentResponseUpdate(
-                    contents=[
-                        Content(
-                            "text",
-                            text=_success_msg(
-                                len(data.articles), data.stories, "dry-run"
-                            ),
-                        )
-                    ],
-                    role="assistant",
-                    author_name=self.id,
-                )
+        en_compose_out = await asyncio.to_thread(
+            lambda: _step4_compose(
+                data.config,
+                data.stories,
+                data.articles,
+                data.date_label,
+                data.logger,
+                meta=data.curate_meta,
+                languages=[],
             )
+        )
+        en_html = en_compose_out["html_body"]
+
+        if not languages:
+            data.html_body = en_html
+
+            if data.dry_run:
+                tg(_success_msg(len(data.articles), data.stories, "dry-run"))
+                await ctx.yield_output(
+                    AgentResponseUpdate(
+                        contents=[
+                            Content(
+                                "text",
+                                text=_success_msg(
+                                    len(data.articles), data.stories, "dry-run"
+                                ),
+                            )
+                        ],
+                        role="assistant",
+                        author_name=self.id,
+                    )
+                )
+                return
+
+            await ctx.send_message(data)
             return
 
-        await ctx.send_message(data)
+        ctx.set_state(SS_EN_HTML, en_html)
+        ctx.set_state(SS_STORIES, data.stories)
+        ctx.set_state(SS_SCANNED, [asdict(a) for a in data.articles])
+        ctx.set_state(SS_DATE_LABEL, data.date_label)
+        ctx.set_state(SS_META, data.curate_meta)
+        ctx.set_state(SS_DRY_RUN, data.dry_run)
+        ctx.set_state(SS_TO_OVERRIDE, data.to_override)
+        ctx.set_state(SS_CONFIG, data.config)
+
+        await ctx.send_message(TranslateTrigger())
 
 
 class TranslateLocale(Executor):
