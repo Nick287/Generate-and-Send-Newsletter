@@ -661,22 +661,67 @@ _html_composer = HtmlComposer(id="4-html-composer")
 _email_sender = EmailSender(id="5-email-sender")
 
 
+def _peek_languages() -> list[str]:
+    """Eagerly resolve ``config.compose_languages`` at build time so the
+    graph shape (linear vs. fan-out) is known before any message flows.
+    在构建时预先解析 ``config.compose_languages``，使图的形状（线性 vs. 扇出）
+    在任何消息流动之前就已确定。
+
+    Any failure (missing config file in unit tests, parse error, etc.)
+    falls back to ``[]`` — the legacy linear shape — so importing this
+    module never raises."""
+    try:
+        result = _step0_config()
+        cfg = result["config"]
+        return list(getattr(cfg, "compose_languages", []) or [])
+    except Exception:  # noqa: BLE001 — defensive: never break import.
+        return []
+
+
 def build_workflow(checkpoint_storage: InMemoryCheckpointStorage | None = None):
     """Build (or rebuild) the workflow. A fresh instance is needed for each checkpoint resume.
-    构建（或重建）工作流。每次 checkpoint 恢复都需要一个新实例。"""
-    return (
-        WorkflowBuilder(
-            name="ai-weekly-digest",
-            start_executor=_config_loader,
-            checkpoint_storage=checkpoint_storage,
-        )
-        .add_edge(_config_loader, _feed_fetcher)
+    构建（或重建）工作流。每次 checkpoint 恢复都需要一个新实例。
+
+    Topology depends on ``config.compose_languages``:
+
+    * **Empty** — legacy linear chain
+      ``ConfigLoader → FeedFetcher → ArticleEnricher → StoryCurator
+      → HtmlComposer → EmailSender``.
+
+    * **Non-empty** (e.g. ``["zh", "ko"]``) — HtmlComposer fans out to
+      one ``TranslateLocale(<locale>)`` per language; all locales fan
+      in to a single ``LocaleAssembler``; the assembler forwards the
+      final composed ``PipelineState`` to ``EmailSender``::
+
+          HtmlComposer ─┬─► TranslateLocale(zh) ─┐
+                        └─► TranslateLocale(ko) ─┴─► LocaleAssembler
+                                                       │
+                                                       ▼
+                                                  EmailSender
+    """
+    languages = _peek_languages()
+
+    builder = WorkflowBuilder(
+        name="ai-weekly-digest",
+        start_executor=_config_loader,
+        checkpoint_storage=checkpoint_storage,
+    )
+    builder = (
+        builder.add_edge(_config_loader, _feed_fetcher)
         .add_edge(_feed_fetcher, _article_enricher)
         .add_edge(_article_enricher, _story_curator)
         .add_edge(_story_curator, _html_composer)
-        .add_edge(_html_composer, _email_sender)
-        .build()
     )
+
+    if not languages:
+        return builder.add_edge(_html_composer, _email_sender).build()
+
+    translators = [TranslateLocale(locale) for locale in languages]
+    assembler = LocaleAssembler()
+    builder = builder.add_fan_out_edges(_html_composer, translators)
+    builder = builder.add_fan_in_edges(translators, assembler)
+    builder = builder.add_edge(assembler, _email_sender)
+    return builder.build()
 
 
 # Default instance (no checkpointing) — used by DevUI
