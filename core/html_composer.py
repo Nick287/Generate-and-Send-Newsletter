@@ -615,13 +615,31 @@ class HtmlComposer:
         date_label: str,
         meta: dict[str, Any],
     ) -> str:
-        """Render the v8_zh.html template body and return the inner CN HTML row.
+        """Back-compat shim: delegates to locale-aware composer with locale='zh'.
 
-        Stories arrive with `title`/`summary` already replaced by Chinese text and
-        an added `date_zh` field (Translator output). The original `tag`, `url`,
-        `image`, and `published_at_iso` fields are preserved verbatim.
+        Kept so external callers and tests (test_v8_bilingual.py #15) that invoke
+        ``composer._compose_chinese_section(...)`` directly continue to work.
         """
-        tmpl_path = TEMPLATES_DIR / "v8_zh.html"
+        return self._compose_locale_section(
+            "zh", stories, scanned_articles, date_label, meta
+        )
+
+    def _compose_locale_section(
+        self,
+        locale: str,
+        stories: list[dict[str, Any]],
+        scanned_articles: list[Article],
+        date_label: str,
+        meta: dict[str, Any],
+    ) -> str:
+        """Render the v8_<locale>.html template body and return the inner row HTML.
+
+        Stories arrive with ``title``/``summary`` already replaced by the target
+        locale's translation and a ``date_zh`` field (locale-formatted date string;
+        field name preserved for placeholder back-compat). Original ``tag``,
+        ``url``, ``image``, and ``published_at_iso`` fields pass through verbatim.
+        """
+        tmpl_path = TEMPLATES_DIR / f"v8_{locale}.html"
         raw = tmpl_path.read_text(encoding="utf-8")
         start = raw.find(_BILINGUAL_BODY_START)
         end = raw.find(_BILINGUAL_BODY_END)
@@ -792,10 +810,13 @@ class HtmlComposer:
 
     @staticmethod
     def _splice_chinese_section(en_html: str, cn_section: str) -> str:
-        """Insert the CN section directly before the EN footer marker.
+        """Insert one combined translated section directly before the EN footer marker.
 
         Pre-asserts the footer marker appears exactly once to detect template drift
-        (test #14). Any other count raises RuntimeError("template drift").
+        (test_v8_bilingual.py #14). Any other count raises RuntimeError.
+        Despite the historical name, the second argument may contain any number of
+        locale sections concatenated together; multi-locale callers go through
+        :meth:`_splice_locale_sections` which guarantees the single-splice invariant.
         """
         count = en_html.count(_FOOTER_MARKER)
         if count != 1:
@@ -803,6 +824,22 @@ class HtmlComposer:
                 "template drift: footer marker count=%d, expected 1" % count
             )
         return en_html.replace(_FOOTER_MARKER, cn_section + _FOOTER_MARKER, 1)
+
+    @staticmethod
+    def _splice_locale_sections(en_html: str, sections: list[str]) -> str:
+        """Combine multiple locale sections and splice them as a single block.
+
+        Concatenates ``sections`` in the order provided (caller is responsible for
+        sorting by ``config.compose_languages``) then performs exactly one call to
+        :meth:`_splice_chinese_section`. Preserves the footer-marker-count-of-1
+        invariant required by test_v8_bilingual.py #14.
+
+        Returns the original ``en_html`` unchanged when ``sections`` is empty.
+        """
+        if not sections:
+            return en_html
+        combined = "".join(sections)
+        return HtmlComposer._splice_chinese_section(en_html, combined)
 
     @staticmethod
     def _story_link(story: dict[str, Any]) -> str:
