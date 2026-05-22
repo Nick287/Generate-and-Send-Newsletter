@@ -477,6 +477,18 @@ class LocaleAssembler(Executor):
         super().__init__(id="4z-locale-assembler")
 
     @handler
+    async def handle_single(
+        self,
+        payload: LocaleTranslation,
+        ctx: WorkflowContext[PipelineState],
+    ) -> None:
+        # Single-locale path uses plain add_edge (fan-in needs >=2 sources).
+        # Wrap into the list shape that the real assembler expects.
+        # 单语言路径用普通 add_edge（fan-in 需要 >= 2 个来源），
+        # 这里把单条消息包成 list，让真正的合并逻辑统一处理。
+        await self.handle(payloads=[payload], ctx=ctx)
+
+    @handler
     async def handle(
         self,
         payloads: list[LocaleTranslation],
@@ -724,8 +736,12 @@ def build_workflow(
 
     translators = [TranslateLocale(locale) for locale in languages]
     assembler = LocaleAssembler()
-    builder = builder.add_fan_out_edges(_html_composer, translators)
-    builder = builder.add_fan_in_edges(translators, assembler)
+    if len(translators) == 1:
+        builder = builder.add_edge(_html_composer, translators[0])
+        builder = builder.add_edge(translators[0], assembler)
+    else:
+        builder = builder.add_fan_out_edges(_html_composer, translators)
+        builder = builder.add_fan_in_edges(translators, assembler)
     builder = builder.add_edge(assembler, _email_sender)
     return builder.build()
 
