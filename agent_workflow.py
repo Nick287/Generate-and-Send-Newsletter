@@ -15,9 +15,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from agent_framework import (
-    Executor, handler, WorkflowBuilder,
-    AgentResponseUpdate, Content, WorkflowContext,
-    register_state_type, InMemoryCheckpointStorage,
+    Executor,
+    handler,
+    WorkflowBuilder,
+    AgentResponseUpdate,
+    Content,
+    WorkflowContext,
+    register_state_type,
+    InMemoryCheckpointStorage,
     WorkflowViz,
 )
 from pydantic import BaseModel, Field
@@ -35,13 +40,14 @@ from steps.step3_curate import run as _step3_curate
 from steps.step4_compose import run as _step4_compose
 from steps.step5_send import run as _step5_send
 
-
 # ── Shared workflow state | 共享工作流状态 ───────────────────────────
+
 
 @dataclass
 class PipelineState:
     """Shared state passed between workflow executors via edges.
     通过边在工作流 executor 之间传递的共享状态。"""
+
     config: Any = None
     feeds: list = field(default_factory=list)
     date_label: str = ""
@@ -54,26 +60,78 @@ class PipelineState:
     to_override: str | None = None
     error: str | None = None
 
+
+@dataclass
+class LocaleTranslation:
+    """Per-locale translation result emitted by TranslateLocale → LocaleAssembler.
+    单个语言的翻译结果消息，由 TranslateLocale 发送给 LocaleAssembler。
+
+    status="ok"    → stories populated with translated dicts.
+    status="error" → stories empty, error populated; assembler logs + skips this locale.
+    """
+
+    locale: str
+    status: str
+    stories: list[dict[str, Any]] = field(default_factory=list)
+    error: str | None = None
+
+
+@dataclass
+class TranslateTrigger:
+    """Zero-field sentinel emitted by HtmlComposer to fan out to every TranslateLocale.
+    零字段哨兵：HtmlComposer 发出，扇出到每个 TranslateLocale。"""
+
+    pass
+
+
+# ── Shared-state keys | 共享状态键 ────────────────────────────────────
+# Use these constants with ctx.set_state(key, value) / ctx.get_state(key, default)
+# (the methods are synchronous — do NOT await them).
+SS_EN_HTML = "compose.en_html"
+SS_STORIES = "compose.stories"
+SS_SCANNED = "compose.scanned_articles"
+SS_DATE_LABEL = "compose.date_label"
+SS_META = "compose.meta"
+SS_DRY_RUN = "pipeline.dry_run"
+SS_TO_OVERRIDE = "pipeline.to_override"
+SS_CONFIG = "pipeline.config"
+SS_FINAL_HTML = "compose.final_html"
+
+
 register_state_type(PipelineState)
 
 
 # ── Workflow input (Pydantic model for DevUI form) ───────────────
 
+
 class WorkflowInput(BaseModel):
     """Input for the newsletter workflow. All fields have defaults — just click Run.
     新闻简报工作流的输入。所有字段都有默认值 — 直接点 Run 即可。"""
 
-    dry_run: bool = Field(default=False, description="Skip email sending (跳过发送邮件)")
-    to_override: str = Field(default="", description="Override recipient email(s), comma-separated (覆盖收件人)")
+    dry_run: bool = Field(
+        default=False, description="Skip email sending (跳过发送邮件)"
+    )
+    to_override: str = Field(
+        default="",
+        description="Override recipient email(s), comma-separated (覆盖收件人)",
+    )
 
 
 # ── Summary helpers | 摘要辅助函数 ───────────────────────────────────
 
+
 def _success_msg(article_count: int, stories: list, status: str) -> str:
     top = " | ".join(s.get("title", "") for s in stories[:3] if s.get("title"))
     imgs = sum(1 for s in stories if s.get("image_url"))
-    return "✅ AI Weekly Digest v7 ready: %s articles, %s stories, %s images, top: %s, send: %s" % (
-        article_count, len(stories), imgs, top or "n/a", status,
+    return (
+        "✅ AI Weekly Digest v7 ready: %s articles, %s stories, %s images, top: %s, send: %s"
+        % (
+            article_count,
+            len(stories),
+            imgs,
+            top or "n/a",
+            status,
+        )
     )
 
 
@@ -83,15 +141,21 @@ def _fail_msg(message: str) -> str:
 
 # ── Step Executors | 步骤执行器 ──────────────────────────────────────
 
+
 class ConfigLoader(Executor):
     """Step 0: Load configuration and feeds.
     步骤0: 加载配置和 feeds。"""
 
-    async def _run(self, dry_run: bool, to_override: str, ctx: WorkflowContext[PipelineState]) -> None:
-        await ctx.yield_output(AgentResponseUpdate(
-            contents=[Content("text", text="⚙️ Step 0: Loading configuration…")],
-            role="assistant", author_name=self.id,
-        ))
+    async def _run(
+        self, dry_run: bool, to_override: str, ctx: WorkflowContext[PipelineState]
+    ) -> None:
+        await ctx.yield_output(
+            AgentResponseUpdate(
+                contents=[Content("text", text="⚙️ Step 0: Loading configuration…")],
+                role="assistant",
+                author_name=self.id,
+            )
+        )
 
         result = await asyncio.to_thread(_step0_config)
         state = PipelineState(
@@ -105,7 +169,9 @@ class ConfigLoader(Executor):
         await ctx.send_message(state)
 
     @handler
-    async def handle(self, input: WorkflowInput, ctx: WorkflowContext[PipelineState]) -> None:
+    async def handle(
+        self, input: WorkflowInput, ctx: WorkflowContext[PipelineState]
+    ) -> None:
         await self._run(input.dry_run, input.to_override, ctx)
 
 
@@ -114,11 +180,16 @@ class FeedFetcher(Executor):
     步骤1: 抓取 RSS feeds。"""
 
     @handler(input=PipelineState)
-    async def handle(self, data: PipelineState, ctx: WorkflowContext[PipelineState]) -> None:
-        await ctx.yield_output(AgentResponseUpdate(
-            contents=[Content("text", text="📡 Step 1: Fetching RSS feeds…")],
-            role="assistant", author_name=self.id,
-        ))
+    async def handle(
+        self, data: PipelineState, ctx: WorkflowContext[PipelineState]
+    ) -> None:
+        await ctx.yield_output(
+            AgentResponseUpdate(
+                contents=[Content("text", text="📡 Step 1: Fetching RSS feeds…")],
+                role="assistant",
+                author_name=self.id,
+            )
+        )
 
         fetch_out = await asyncio.to_thread(
             _step1_fetch, data.config, data.feeds, data.date_label, data.logger
@@ -127,18 +198,26 @@ class FeedFetcher(Executor):
         if fetch_out["abort"]:
             data.error = fetch_out["abort_message"]
             log_event(data.logger, logging.ERROR, "fetch_abort", message=data.error)
-            await ctx.yield_output(AgentResponseUpdate(
-                contents=[Content("text", text=_fail_msg(data.error))],
-                role="assistant", author_name=self.id,
-            ))
+            await ctx.yield_output(
+                AgentResponseUpdate(
+                    contents=[Content("text", text=_fail_msg(data.error))],
+                    role="assistant",
+                    author_name=self.id,
+                )
+            )
             return
 
         data.articles = fetch_out["articles"]
 
-        await ctx.yield_output(AgentResponseUpdate(
-            contents=[Content("text", text="📡 Fetched %d articles" % len(data.articles))],
-            role="assistant", author_name=self.id,
-        ))
+        await ctx.yield_output(
+            AgentResponseUpdate(
+                contents=[
+                    Content("text", text="📡 Fetched %d articles" % len(data.articles))
+                ],
+                role="assistant",
+                author_name=self.id,
+            )
+        )
         await ctx.send_message(data)
 
 
@@ -147,11 +226,21 @@ class ArticleEnricher(Executor):
     步骤2: 预评分和充实文章。"""
 
     @handler(input=PipelineState)
-    async def handle(self, data: PipelineState, ctx: WorkflowContext[PipelineState]) -> None:
-        await ctx.yield_output(AgentResponseUpdate(
-            contents=[Content("text", text="🔍 Step 2: Enriching %d articles…" % len(data.articles))],
-            role="assistant", author_name=self.id,
-        ))
+    async def handle(
+        self, data: PipelineState, ctx: WorkflowContext[PipelineState]
+    ) -> None:
+        await ctx.yield_output(
+            AgentResponseUpdate(
+                contents=[
+                    Content(
+                        "text",
+                        text="🔍 Step 2: Enriching %d articles…" % len(data.articles),
+                    )
+                ],
+                role="assistant",
+                author_name=self.id,
+            )
+        )
 
         enrich_out = await asyncio.to_thread(
             _step2_enrich, data.config, data.articles, data.date_label, data.logger
@@ -165,11 +254,18 @@ class StoryCurator(Executor):
     步骤3: LLM 筛选 — 选出最佳故事。"""
 
     @handler(input=PipelineState)
-    async def handle(self, data: PipelineState, ctx: WorkflowContext[PipelineState]) -> None:
-        await ctx.yield_output(AgentResponseUpdate(
-            contents=[Content("text", text="🤖 Step 3: Curating stories with LLM…")],
-            role="assistant", author_name=self.id,
-        ))
+    async def handle(
+        self, data: PipelineState, ctx: WorkflowContext[PipelineState]
+    ) -> None:
+        await ctx.yield_output(
+            AgentResponseUpdate(
+                contents=[
+                    Content("text", text="🤖 Step 3: Curating stories with LLM…")
+                ],
+                role="assistant",
+                author_name=self.id,
+            )
+        )
 
         curate_out = await asyncio.to_thread(
             _step3_curate, data.config, data.articles, data.date_label, data.logger
@@ -177,10 +273,15 @@ class StoryCurator(Executor):
         data.stories = curate_out["stories"]
         data.curate_meta = curate_out.get("meta", {}) or {}
 
-        await ctx.yield_output(AgentResponseUpdate(
-            contents=[Content("text", text="🤖 Curated %d stories" % len(data.stories))],
-            role="assistant", author_name=self.id,
-        ))
+        await ctx.yield_output(
+            AgentResponseUpdate(
+                contents=[
+                    Content("text", text="🤖 Curated %d stories" % len(data.stories))
+                ],
+                role="assistant",
+                author_name=self.id,
+            )
+        )
         await ctx.send_message(data)
 
 
@@ -189,23 +290,46 @@ class HtmlComposer(Executor):
     步骤4: 组合新闻简报 HTML。"""
 
     @handler(input=PipelineState)
-    async def handle(self, data: PipelineState, ctx: WorkflowContext[PipelineState]) -> None:
-        await ctx.yield_output(AgentResponseUpdate(
-            contents=[Content("text", text="📝 Step 4: Composing HTML newsletter…")],
-            role="assistant", author_name=self.id,
-        ))
+    async def handle(
+        self, data: PipelineState, ctx: WorkflowContext[PipelineState]
+    ) -> None:
+        await ctx.yield_output(
+            AgentResponseUpdate(
+                contents=[
+                    Content("text", text="📝 Step 4: Composing HTML newsletter…")
+                ],
+                role="assistant",
+                author_name=self.id,
+            )
+        )
 
         compose_out = await asyncio.to_thread(
-            _step4_compose, data.config, data.stories, data.articles, data.date_label, data.logger, data.curate_meta
+            _step4_compose,
+            data.config,
+            data.stories,
+            data.articles,
+            data.date_label,
+            data.logger,
+            data.curate_meta,
         )
         data.html_body = compose_out["html_body"]
 
         if data.dry_run:
             tg(_success_msg(len(data.articles), data.stories, "dry-run"))
-            await ctx.yield_output(AgentResponseUpdate(
-                contents=[Content("text", text=_success_msg(len(data.articles), data.stories, "dry-run"))],
-                role="assistant", author_name=self.id,
-            ))
+            await ctx.yield_output(
+                AgentResponseUpdate(
+                    contents=[
+                        Content(
+                            "text",
+                            text=_success_msg(
+                                len(data.articles), data.stories, "dry-run"
+                            ),
+                        )
+                    ],
+                    role="assistant",
+                    author_name=self.id,
+                )
+            )
             return
 
         await ctx.send_message(data)
@@ -216,11 +340,16 @@ class EmailSender(Executor):
     步骤5: 发送新闻简报邮件。"""
 
     @handler(input=PipelineState)
-    async def handle(self, data: PipelineState, ctx: WorkflowContext[PipelineState]) -> None:
-        await ctx.yield_output(AgentResponseUpdate(
-            contents=[Content("text", text="📧 Step 5: Sending email…")],
-            role="assistant", author_name=self.id,
-        ))
+    async def handle(
+        self, data: PipelineState, ctx: WorkflowContext[PipelineState]
+    ) -> None:
+        await ctx.yield_output(
+            AgentResponseUpdate(
+                contents=[Content("text", text="📧 Step 5: Sending email…")],
+                role="assistant",
+                author_name=self.id,
+            )
+        )
 
         if data.to_override and data.to_override.strip():
             recipients = [r.strip() for r in data.to_override.split(",") if r.strip()]
@@ -232,22 +361,41 @@ class EmailSender(Executor):
         )
 
         send_out = await asyncio.to_thread(
-            _step5_send, data.config, recipients, subject, data.html_body, data.date_label, data.logger
+            _step5_send,
+            data.config,
+            recipients,
+            subject,
+            data.html_body,
+            data.date_label,
+            data.logger,
         )
 
         if not send_out["success"]:
             tg(_fail_msg(send_out["detail"]))
-            await ctx.yield_output(AgentResponseUpdate(
-                contents=[Content("text", text=_fail_msg(send_out["detail"]))],
-                role="assistant", author_name=self.id,
-            ))
+            await ctx.yield_output(
+                AgentResponseUpdate(
+                    contents=[Content("text", text=_fail_msg(send_out["detail"]))],
+                    role="assistant",
+                    author_name=self.id,
+                )
+            )
             return
 
         tg(_success_msg(len(data.articles), data.stories, send_out["detail"]))
-        await ctx.yield_output(AgentResponseUpdate(
-            contents=[Content("text", text=_success_msg(len(data.articles), data.stories, send_out["detail"]))],
-            role="assistant", author_name=self.id,
-        ))
+        await ctx.yield_output(
+            AgentResponseUpdate(
+                contents=[
+                    Content(
+                        "text",
+                        text=_success_msg(
+                            len(data.articles), data.stories, send_out["detail"]
+                        ),
+                    )
+                ],
+                role="assistant",
+                author_name=self.id,
+            )
+        )
 
 
 # ── Build workflow | 构建工作流 ──────────────────────────────────────
@@ -299,9 +447,12 @@ if __name__ == "__main__":
 
     try:
         import pathlib, shutil
+
         svg_tmp = viz.export(format="svg")
         svg_dest = pathlib.Path(__file__).with_name("workflow_viz.svg")
         shutil.move(svg_tmp, svg_dest)
         print(f"\nSVG exported to: {svg_dest}")
     except Exception:
-        print("\n(SVG export needs `apt install graphviz` — copy the Mermaid text above to https://mermaid.live)")
+        print(
+            "\n(SVG export needs `apt install graphviz` — copy the Mermaid text above to https://mermaid.live)"
+        )
