@@ -126,6 +126,30 @@ def translate_prompt_path(lang: str = "zh", version: str = "v1") -> Path:
     return canonical
 
 
+def validate_languages_have_prompts(languages: list[str], version: str = "v1") -> None:
+    """Validate that every locale in `languages` has a translate prompt file.
+    校验每种语言都有对应的翻译 prompt 文件。
+
+    Raises FileNotFoundError listing every missing prompt so the caller gets a
+    single fail-fast error at startup instead of mid-pipeline (e.g. after a
+    successful zh translation, ko fails because `prompts/translate-ko-v1.md`
+    is missing). Called from ConfigLoader (YAML compose.languages) and from
+    run_pipeline.py (after --languages CLI override).
+    """
+    missing: list[Path] = []
+    for lang in languages:
+        path = translate_prompt_path(lang, version)
+        if not path.exists():
+            missing.append(path)
+    if missing:
+        joined = ", ".join(str(p) for p in missing)
+        raise FileNotFoundError(
+            "Missing translate prompt file(s): %s. "
+            "Author the missing prompt(s) or remove the locale from "
+            "compose.languages / --languages." % joined
+        )
+
+
 def ensure_directories() -> None:
     """Create data/, output/ and tmp directories if they don't exist."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)

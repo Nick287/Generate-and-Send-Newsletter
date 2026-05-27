@@ -30,6 +30,7 @@ from agent_framework import (
 )
 
 from agent_workflow import WorkflowInput, build_workflow
+from core.paths import validate_languages_have_prompts
 
 
 def parse_args() -> argparse.Namespace:
@@ -66,6 +67,9 @@ async def run_cli(args: argparse.Namespace) -> int:
     print("  AI Weekly Digest — Agent Framework Workflow")
     print("=" * 60)
     print()
+
+    if args.languages:
+        validate_languages_have_prompts(list(args.languages))
 
     storage = InMemoryCheckpointStorage()
     workflow_input = WorkflowInput(

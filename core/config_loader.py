@@ -30,6 +30,7 @@ from core.paths import (
     curate_prompt_path,
     template_path,
     translate_prompt_path,
+    validate_languages_have_prompts,
 )
 from core.utils import log_event, mask_recipients
 
@@ -373,6 +374,7 @@ class ConfigLoader:
 
         for lang in compose_languages:
             translate_prompt_path(lang, translate_prompt_version)
+        validate_languages_have_prompts(compose_languages, translate_prompt_version)
 
         return AppConfig(
             issue_number=issue_number,

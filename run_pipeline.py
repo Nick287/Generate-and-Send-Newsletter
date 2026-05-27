@@ -48,6 +48,7 @@ from core.utils import (
 )
 from core.models import AppConfig
 from core.html_composer import HtmlComposer
+from core.paths import validate_languages_have_prompts
 
 from steps.step0_config import run as step0_load_config
 from steps.step1_fetch import run as step1_fetch
@@ -98,6 +99,9 @@ def full_pipeline(args: argparse.Namespace) -> int:
         config.compose_bilingual = False
     if getattr(args, "languages", None) is not None:
         config.compose_languages = list(args.languages)
+        validate_languages_have_prompts(
+            config.compose_languages, config.translate_prompt_version
+        )
     feeds = ctx["feeds"]
     date_label = ctx["date_label"]
     logger = ctx["logger"]
@@ -220,6 +224,10 @@ def main() -> int:
                 ctx["config"].compose_bilingual = False
             if getattr(args, "languages", None) is not None:
                 ctx["config"].compose_languages = list(args.languages)
+                validate_languages_have_prompts(
+                    ctx["config"].compose_languages,
+                    ctx["config"].translate_prompt_version,
+                )
             composer = HtmlComposer(ctx["config"])
             return composer.compose_only(ctx["logger"])
 
