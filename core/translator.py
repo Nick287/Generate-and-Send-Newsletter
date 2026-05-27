@@ -12,7 +12,7 @@ from typing import Any
 from core.llm_client import LlmClient
 from core.paths import translate_prompt_path
 
-_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+_CJK_RE = re.compile(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]")
 
 
 @dataclass(frozen=True)
@@ -177,20 +177,24 @@ class Translator:
             by_id[entry_id] = entry
 
         merged: list[dict[str, Any]] = []
+        title_key = "title_%s" % self._locale.code
+        summary_key = "summary_%s" % self._locale.code
         for idx, original in enumerate(original_stories):
             sid = self._story_id(original, idx)
             if sid not in by_id:
                 raise TranslationFailed("missing_translation id=%r" % sid)
             cn = by_id[sid]
-            title_zh = cn.get("title_zh")
-            summary_zh = cn.get("summary_zh")
-            if not isinstance(title_zh, str) or not isinstance(summary_zh, str):
+            title_translated = cn.get(title_key)
+            summary_translated = cn.get(summary_key)
+            if not isinstance(title_translated, str) or not isinstance(
+                summary_translated, str
+            ):
                 raise TranslationFailed(
-                    "missing_translation id=%r (title_zh/summary_zh)" % sid
+                    "missing_translation id=%r (%s/%s)" % (sid, title_key, summary_key)
                 )
             out = dict(original)
-            out["title"] = self._repair_utf8_mojibake(title_zh)
-            out["summary"] = self._repair_utf8_mojibake(summary_zh)
+            out["title"] = self._repair_utf8_mojibake(title_translated)
+            out["summary"] = self._repair_utf8_mojibake(summary_translated)
             merged.append(out)
         return merged
 

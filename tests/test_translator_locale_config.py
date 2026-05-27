@@ -144,5 +144,96 @@ class TestComposerLocaleFactoryRegistry(unittest.TestCase):
             )
 
 
+class TestTranslatorMergeUsesLocaleSuffixedKeys(unittest.TestCase):
+    """Regression: `_merge` must read `title_{locale.code}` / `summary_{locale.code}`.
+
+    Before the Oracle Option-B fix `_merge` hardcoded `title_zh`/`summary_zh`,
+    so a `Translator(locale=LocaleConfig.ko())` would silently drop every
+    Korean translation. This test confirms (a) the per-locale lookup works,
+    and (b) feeding zh-suffixed keys to a non-zh translator raises
+    `TranslationFailed` (no cross-locale fall-through).
+    """
+
+    def _make_translator(self, locale_code: str):
+        from unittest.mock import MagicMock
+
+        from core.translator import LocaleConfig, Translator
+
+        factory = {
+            "zh": LocaleConfig.zh,
+            "ja": LocaleConfig.ja,
+            "ko": LocaleConfig.ko,
+            "vi": LocaleConfig.vi,
+        }[locale_code]
+        return Translator(
+            llm_client=MagicMock(),
+            prompt_version="v1",
+            logger=MagicMock(),
+            locale=factory(),
+        )
+
+    def test_merge_reads_locale_suffixed_keys_for_ko(self) -> None:
+        translator = self._make_translator("ko")
+        originals = [{"id": "s1", "title": "EN", "summary": "EN summary"}]
+        response = {
+            "stories": [
+                {"id": "s1", "title_ko": "한국어 제목", "summary_ko": "한국어 요약"}
+            ]
+        }
+        merged = translator._merge(originals, response)
+        self.assertEqual(merged[0]["title"], "한국어 제목")
+        self.assertEqual(merged[0]["summary"], "한국어 요약")
+
+    def test_merge_reads_locale_suffixed_keys_for_ja(self) -> None:
+        translator = self._make_translator("ja")
+        originals = [{"id": "s1", "title": "EN", "summary": "EN summary"}]
+        response = {
+            "stories": [
+                {"id": "s1", "title_ja": "日本語タイトル", "summary_ja": "日本語要約"}
+            ]
+        }
+        merged = translator._merge(originals, response)
+        self.assertEqual(merged[0]["title"], "日本語タイトル")
+        self.assertEqual(merged[0]["summary"], "日本語要約")
+
+    def test_merge_reads_locale_suffixed_keys_for_vi(self) -> None:
+        translator = self._make_translator("vi")
+        originals = [{"id": "s1", "title": "EN", "summary": "EN summary"}]
+        response = {
+            "stories": [
+                {"id": "s1", "title_vi": "Tiêu đề tiếng Việt", "summary_vi": "Tóm tắt"}
+            ]
+        }
+        merged = translator._merge(originals, response)
+        self.assertEqual(merged[0]["title"], "Tiêu đề tiếng Việt")
+        self.assertEqual(merged[0]["summary"], "Tóm tắt")
+
+    def test_merge_rejects_wrong_locale_keys_for_ko_translator(self) -> None:
+        from core.translator import TranslationFailed
+
+        translator = self._make_translator("ko")
+        originals = [{"id": "s1", "title": "EN", "summary": "EN summary"}]
+        response = {
+            "stories": [{"id": "s1", "title_zh": "中文标题", "summary_zh": "中文摘要"}]
+        }
+        with self.assertRaises(TranslationFailed) as cm:
+            translator._merge(originals, response)
+        self.assertIn("title_ko", str(cm.exception))
+        self.assertIn("summary_ko", str(cm.exception))
+
+    def test_merge_rejects_wrong_locale_keys_for_zh_translator(self) -> None:
+        from core.translator import TranslationFailed
+
+        translator = self._make_translator("zh")
+        originals = [{"id": "s1", "title": "EN", "summary": "EN summary"}]
+        response = {
+            "stories": [{"id": "s1", "title_ko": "한국어", "summary_ko": "요약"}]
+        }
+        with self.assertRaises(TranslationFailed) as cm:
+            translator._merge(originals, response)
+        self.assertIn("title_zh", str(cm.exception))
+        self.assertIn("summary_zh", str(cm.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
