@@ -16,8 +16,19 @@ llm:
 
 # ---- Compose stage -----------------------------------------------------------
 compose:
-  bilingual: true
+  bilingual: true                    # Legacy switch — kept for back-compat.
+                                     # When `languages` below is set, it wins;
+                                     # `bilingual: true` alone means [zh].
   translate_prompt_version: "v1"
+
+  # Multi-locale translation (issue #28 fan-out / fan-in).
+  # Each locale produces a sibling HTML section appended after the English
+  # newsletter. Per-locale failures are isolated (EN always ships).
+  # Supported locales: zh, ja, ko, vi  (each must have a matching
+  # prompts/translate-{locale}-{version}.md file).
+  # Omit or leave empty to fall back to `bilingual`.
+  # CLI override: `--languages zh ko` (space-separated, or empty to force EN-only).
+  languages: ["zh"]
 
 # ---- Email -------------------------------------------------------------------
 email:
