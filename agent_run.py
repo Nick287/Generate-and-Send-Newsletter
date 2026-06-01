@@ -18,6 +18,7 @@ import sys
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv(override=True)
 except ImportError:
     pass
@@ -29,14 +30,33 @@ from agent_framework import (
 )
 
 from agent_workflow import WorkflowInput, build_workflow
+from core.paths import validate_languages_have_prompts
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="AI Weekly Digest — Agent Framework workflow")
+    parser = argparse.ArgumentParser(
+        description="AI Weekly Digest — Agent Framework workflow"
+    )
     parser.add_argument("--dry-run", action="store_true", help="Skip email sending")
     parser.add_argument("--to", help="Override recipient email(s), comma-separated")
-    parser.add_argument("--retries", type=int, default=0, metavar="N",
-                        help="Auto-retry up to N times on failure using checkpoint resume (失败时自动重试N次)")
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Auto-retry up to N times on failure using checkpoint resume (失败时自动重试N次)",
+    )
+    parser.add_argument(
+        "--languages",
+        nargs="*",
+        default=None,
+        metavar="LOCALE",
+        help=(
+            "Override config.compose_languages. Example: --languages zh ko ja vi. "
+            "Pass --languages with no values to force EN-only (legacy linear shape). "
+            "Omit the flag entirely to use config.yaml. (覆盖 config.compose_languages)"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -48,30 +68,46 @@ async def run_cli(args: argparse.Namespace) -> int:
     print("=" * 60)
     print()
 
+    if args.languages:
+        validate_languages_have_prompts(list(args.languages))
+
     storage = InMemoryCheckpointStorage()
-    workflow_input = WorkflowInput(dry_run=args.dry_run, to_override=args.to or "")
+    workflow_input = WorkflowInput(
+        dry_run=args.dry_run,
+        to_override=args.to or "",
+        languages=args.languages,
+    )
     latest_checkpoint: WorkflowCheckpoint | None = None
     max_retries = args.retries
     attempt = 0
 
     while True:
         attempt += 1
-        workflow = build_workflow(checkpoint_storage=storage)
+        workflow = build_workflow(
+            checkpoint_storage=storage,
+            languages=args.languages,
+        )
 
         if latest_checkpoint is not None:
-            print("⚡ Retry %d/%d — resuming from checkpoint %s" % (
-                attempt - 1, max_retries, latest_checkpoint.checkpoint_id[:12]))
-            print("  (iteration %d, saved at %s)" % (
-                latest_checkpoint.iteration_count, latest_checkpoint.timestamp))
+            print(
+                "⚡ Retry %d/%d — resuming from checkpoint %s"
+                % (attempt - 1, max_retries, latest_checkpoint.checkpoint_id[:12])
+            )
+            print(
+                "  (iteration %d, saved at %s)"
+                % (latest_checkpoint.iteration_count, latest_checkpoint.timestamp)
+            )
             print()
-            stream = workflow.run(checkpoint_id=latest_checkpoint.checkpoint_id, stream=True)
+            stream = workflow.run(
+                checkpoint_id=latest_checkpoint.checkpoint_id, stream=True
+            )
         else:
             stream = workflow.run(workflow_input, stream=True)
 
         try:
             async for event in stream:
                 if isinstance(event, AgentResponseUpdate):
-                    for c in (event.contents or []):
+                    for c in event.contents or []:
                         if hasattr(c, "text") and c.text:
                             print(c.text)
 

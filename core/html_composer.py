@@ -17,12 +17,12 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from core.llm_client import LlmClient
 from core.models import AppConfig, Article
 from core.paths import DATA_DIR, OUTPUT_DIR, TEMPLATES_DIR, TMP_HTML_FILE, template_path
-from core.translator import TranslationFailed, Translator
+from core.translator import LocaleConfig, TranslationFailed, Translator
 from core.constants import TAG_PLACEHOLDER_COLORS
 from core.utils import (
     escape_html,
@@ -75,52 +75,21 @@ class HtmlComposer:
         logger: Optional[logging.Logger] = None,
         meta: Optional[dict[str, Any]] = None,
     ) -> str:
-        """Take curated stories + all scanned articles and return filled HTML.
-        接收筛选故事+所有扫描文章，返回填充完成的HTML。
-        Populates C1–C8 cards, Q1–Q5 quick reads, S1–S10 sidebar. | 填充C1-C8卡片、Q1-Q5快速阅读、S1-S10侧边栏。
+        """Back-compat shim routing through :func:`compose_multilang`.
+
+        Signature preserved unchanged (tests #10, #11, #13 + legacy callers like
+        ``run_pipeline.py:96``). The active locales are derived from
+        ``self.config`` (``compose_languages``, then legacy ``compose_bilingual``).
         """
         print("--- Step: Composing newsletter HTML ---")
-        version = getattr(self.config, "template_version", None) or "v7"
-        tmpl = template_path(version) if version else (TEMPLATES_DIR / "v7.html")
-        template = tmpl.read_text(encoding="utf-8")
-
-        if version == "v8":
-            en_html = self._compose_v8(
-                template, stories, scanned_articles, date_label, meta or {}
-            )
-        else:
-            en_html = self._compose_v7(template, stories, scanned_articles, date_label)
-
-        if not getattr(self.config, "compose_bilingual", False) or version != "v8":
-            return en_html
-
-        active_logger = logger or logging.getLogger("ai-newsletter-v5")
-        try:
-            translator = Translator(
-                llm_client=LlmClient(self.config, active_logger),
-                prompt_version=getattr(self.config, "translate_prompt_version", "v1"),
-                logger=active_logger,
-            )
-            translated_stories = translator.translate_stories(stories)
-            cn_section = self._compose_chinese_section(
-                translated_stories, scanned_articles, date_label, meta or {}
-            )
-            spliced = self._splice_chinese_section(en_html, cn_section)
-            active_logger.info("bilingual=success")
-            log_event(
-                active_logger, logging.INFO, "compose_bilingual", bilingual="success"
-            )
-            return spliced
-        except TranslationFailed as exc:
-            active_logger.warning("bilingual=skipped reason=%s", exc)
-            log_event(
-                active_logger,
-                logging.WARNING,
-                "compose_bilingual",
-                bilingual="skipped",
-                reason=str(exc),
-            )
-            return en_html
+        return compose_multilang(
+            self.config,
+            stories,
+            scanned_articles,
+            date_label,
+            logger=logger,
+            meta=meta,
+        )
 
     def _compose_v7(
         self,
@@ -615,13 +584,31 @@ class HtmlComposer:
         date_label: str,
         meta: dict[str, Any],
     ) -> str:
-        """Render the v8_zh.html template body and return the inner CN HTML row.
+        """Back-compat shim: delegates to locale-aware composer with locale='zh'.
 
-        Stories arrive with `title`/`summary` already replaced by Chinese text and
-        an added `date_zh` field (Translator output). The original `tag`, `url`,
-        `image`, and `published_at_iso` fields are preserved verbatim.
+        Kept so external callers and tests (test_v8_bilingual.py #15) that invoke
+        ``composer._compose_chinese_section(...)`` directly continue to work.
         """
-        tmpl_path = TEMPLATES_DIR / "v8_zh.html"
+        return self._compose_locale_section(
+            "zh", stories, scanned_articles, date_label, meta
+        )
+
+    def _compose_locale_section(
+        self,
+        locale: str,
+        stories: list[dict[str, Any]],
+        scanned_articles: list[Article],
+        date_label: str,
+        meta: dict[str, Any],
+    ) -> str:
+        """Render the v8_<locale>.html template body and return the inner row HTML.
+
+        Stories arrive with ``title``/``summary`` already replaced by the target
+        locale's translation and a ``date_zh`` field (locale-formatted date string;
+        field name preserved for placeholder back-compat). Original ``tag``,
+        ``url``, ``image``, and ``published_at_iso`` fields pass through verbatim.
+        """
+        tmpl_path = TEMPLATES_DIR / f"v8_{locale}.html"
         raw = tmpl_path.read_text(encoding="utf-8")
         start = raw.find(_BILINGUAL_BODY_START)
         end = raw.find(_BILINGUAL_BODY_END)
@@ -792,10 +779,13 @@ class HtmlComposer:
 
     @staticmethod
     def _splice_chinese_section(en_html: str, cn_section: str) -> str:
-        """Insert the CN section directly before the EN footer marker.
+        """Insert one combined translated section directly before the EN footer marker.
 
         Pre-asserts the footer marker appears exactly once to detect template drift
-        (test #14). Any other count raises RuntimeError("template drift").
+        (test_v8_bilingual.py #14). Any other count raises RuntimeError.
+        Despite the historical name, the second argument may contain any number of
+        locale sections concatenated together; multi-locale callers go through
+        :meth:`_splice_locale_sections` which guarantees the single-splice invariant.
         """
         count = en_html.count(_FOOTER_MARKER)
         if count != 1:
@@ -803,6 +793,22 @@ class HtmlComposer:
                 "template drift: footer marker count=%d, expected 1" % count
             )
         return en_html.replace(_FOOTER_MARKER, cn_section + _FOOTER_MARKER, 1)
+
+    @staticmethod
+    def _splice_locale_sections(en_html: str, sections: list[str]) -> str:
+        """Combine multiple locale sections and splice them as a single block.
+
+        Concatenates ``sections`` in the order provided (caller is responsible for
+        sorting by ``config.compose_languages``) then performs exactly one call to
+        :meth:`_splice_chinese_section`. Preserves the footer-marker-count-of-1
+        invariant required by test_v8_bilingual.py #14.
+
+        Returns the original ``en_html`` unchanged when ``sections`` is empty.
+        """
+        if not sections:
+            return en_html
+        combined = "".join(sections)
+        return HtmlComposer._splice_chinese_section(en_html, combined)
 
     @staticmethod
     def _story_link(story: dict[str, Any]) -> str:
@@ -869,3 +875,113 @@ class HtmlComposer:
             raise ValueError("Expected curated file to contain a JSON array or object")
         curator = ContentCurator(self.config, logging.getLogger("ai-newsletter-v5"))
         return curator._normalize_output(stories_raw), meta
+
+
+_LOCALE_FACTORIES: dict[str, Callable[[], LocaleConfig]] = {
+    "zh": LocaleConfig.zh,
+    "ja": LocaleConfig.ja,
+    "ko": LocaleConfig.ko,
+    "vi": LocaleConfig.vi,
+}
+
+
+def _resolve_languages(config: AppConfig, languages: Optional[list[str]]) -> list[str]:
+    """Resolve which locales to compose.
+
+    Precedence: explicit ``languages`` arg > ``config.compose_languages`` >
+    legacy ``["zh"] if config.compose_bilingual else []``.
+    Unknown locale codes are dropped with no error (validated upstream in
+    config_loader); empty result triggers EN-only rendering.
+    """
+    if languages is not None:
+        candidate = languages
+    else:
+        candidate = list(getattr(config, "compose_languages", []) or [])
+        if not candidate and getattr(config, "compose_bilingual", False):
+            candidate = ["zh"]
+    return [code for code in candidate if code in _LOCALE_FACTORIES]
+
+
+def compose_multilang(
+    config: AppConfig,
+    stories: list[dict[str, Any]],
+    scanned_articles: list[Article],
+    date_label: str,
+    logger: Optional[logging.Logger] = None,
+    meta: Optional[dict[str, Any]] = None,
+    languages: Optional[list[str]] = None,
+    pre_translated: Optional[dict[str, list[dict[str, Any]]]] = None,
+) -> str:
+    """Render the newsletter HTML with EN + zero or more translated locale sections.
+
+    Resolves locales via :func:`_resolve_languages` (explicit param wins, then
+    ``config.compose_languages``, then legacy ``compose_bilingual``).
+    For each resolved locale, uses ``pre_translated[locale]`` if supplied
+    (Executor architecture path — translation already happened in parallel
+    TranslateLocale executors), otherwise instantiates Translator inline
+    (legacy ``HtmlComposer.compose`` shim path). Per-locale failures
+    (``TranslationFailed``) are logged + skipped; surviving locale sections
+    are concatenated in resolved-list order and spliced via a single call to
+    :meth:`HtmlComposer._splice_locale_sections`, preserving the
+    footer-marker-count-of-1 invariant (test_v8_bilingual.py #14).
+
+    For ``template_version != "v8"`` (e.g. v7) returns EN unchanged — only v8
+    supports multi-locale splicing.
+    """
+    composer = HtmlComposer(config)
+    active_logger = logger or logging.getLogger("ai-newsletter-v5")
+    meta = meta or {}
+
+    version = getattr(config, "template_version", None) or "v7"
+    tmpl = template_path(version) if version else (TEMPLATES_DIR / "v7.html")
+    template = tmpl.read_text(encoding="utf-8")
+
+    if version == "v8":
+        en_html = composer._compose_v8(
+            template, stories, scanned_articles, date_label, meta
+        )
+    else:
+        en_html = composer._compose_v7(template, stories, scanned_articles, date_label)
+
+    resolved = _resolve_languages(config, languages)
+    if not resolved or version != "v8":
+        return en_html
+
+    sections: list[str] = []
+    for locale in resolved:
+        try:
+            if pre_translated is not None and locale in pre_translated:
+                translated_stories = pre_translated[locale]
+            else:
+                locale_cfg = _LOCALE_FACTORIES[locale]()
+                translator = Translator(
+                    llm_client=LlmClient(config, active_logger),
+                    prompt_version=getattr(config, "translate_prompt_version", "v1"),
+                    logger=active_logger,
+                    locale=locale_cfg,
+                )
+                translated_stories = translator.translate_stories(stories)
+            section = composer._compose_locale_section(
+                locale, translated_stories, scanned_articles, date_label, meta
+            )
+            sections.append(section)
+            active_logger.info("bilingual=success locale=%s", locale)
+            log_event(
+                active_logger,
+                logging.INFO,
+                "compose_bilingual",
+                bilingual="success",
+                locale=locale,
+            )
+        except TranslationFailed as exc:
+            active_logger.warning("bilingual=skipped locale=%s reason=%s", locale, exc)
+            log_event(
+                active_logger,
+                logging.WARNING,
+                "compose_bilingual",
+                bilingual="skipped",
+                locale=locale,
+                reason=str(exc),
+            )
+
+    return HtmlComposer._splice_locale_sections(en_html, sections)

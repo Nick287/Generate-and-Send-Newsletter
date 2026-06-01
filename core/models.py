@@ -5,7 +5,7 @@ Data models (dataclasses) for the newsletter pipeline.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -62,6 +62,7 @@ class AppConfig:
     template_version: str = "v7"
     curate_prompt_version: str = "v5"
     compose_bilingual: bool = True
+    compose_languages: list[str] = field(default_factory=list)
     translate_prompt_version: str = "v1"
 
 

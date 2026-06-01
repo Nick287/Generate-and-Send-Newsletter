@@ -64,6 +64,7 @@ def output_html_path(date_label: str) -> Path:
 # traversal (e.g. "../secret") and arbitrary file reads.
 # 严格白名单正则：仅允许 v+数字（如 v1/v7/v12），防止路径穿越与任意文件读取。
 _VERSION_RE = re.compile(r"^v\d+$")
+_LOCALE_RE = re.compile(r"^[a-z]{2,3}$")
 
 
 def _validate_version(version: str, kind: str) -> str:
@@ -73,6 +74,15 @@ def _validate_version(version: str, kind: str) -> str:
             % (kind, version)
         )
     return version
+
+
+def _validate_locale(lang: str) -> str:
+    if not isinstance(lang, str) or not _LOCALE_RE.match(lang):
+        raise ValueError(
+            "Invalid locale %r: must be 2-3 lowercase letters (e.g. zh, ko, vi, cn)"
+            % (lang,)
+        )
+    return lang
 
 
 def template_path(version: str = DEFAULT_TEMPLATE_VERSION) -> Path:
@@ -91,12 +101,53 @@ def curate_prompt_path(version: str = DEFAULT_CURATE_PROMPT_VERSION) -> Path:
     return PROMPTS_DIR / ("curate-%s.md" % safe)
 
 
-def translate_prompt_path(version: str = "v1") -> Path:
-    """Return the translate (EN→CN) prompt path for the given version.
-    返回指定版本的中文翻译 prompt 路径。
+def translate_prompt_path(lang: str = "zh", version: str = "v1") -> Path:
+    """Return the translate prompt path for the given locale + version.
+    返回指定语言/版本的翻译 prompt 路径。
+
+    `cn` ↔ `zh` alias: if the requested file doesn't exist, the alternate is
+    tried so callers using the legacy "cn" code keep working after the
+    `translate-cn-v1.md` → `translate-zh-v1.md` rename. If neither exists,
+    the canonical (non-alias) path is returned so the caller's `.exists()`
+    check still raises a meaningful FileNotFoundError downstream.
     """
-    safe = _validate_version(version, "translate prompt")
-    return PROMPTS_DIR / ("translate-cn-%s.md" % safe)
+    safe_lang = _validate_locale(lang)
+    safe_version = _validate_version(version, "translate prompt")
+    canonical = PROMPTS_DIR / ("translate-%s-%s.md" % (safe_lang, safe_version))
+    if canonical.exists():
+        return canonical
+    if safe_lang in ("cn", "zh"):
+        alternate_lang = "zh" if safe_lang == "cn" else "cn"
+        alternate = PROMPTS_DIR / (
+            "translate-%s-%s.md" % (alternate_lang, safe_version)
+        )
+        if alternate.exists():
+            return alternate
+    return canonical
+
+
+def validate_languages_have_prompts(languages: list[str], version: str = "v1") -> None:
+    """Validate that every locale in `languages` has a translate prompt file.
+    校验每种语言都有对应的翻译 prompt 文件。
+
+    Raises FileNotFoundError listing every missing prompt so the caller gets a
+    single fail-fast error at startup instead of mid-pipeline (e.g. after a
+    successful zh translation, ko fails because `prompts/translate-ko-v1.md`
+    is missing). Called from ConfigLoader (YAML compose.languages) and from
+    run_pipeline.py (after --languages CLI override).
+    """
+    missing: list[Path] = []
+    for lang in languages:
+        path = translate_prompt_path(lang, version)
+        if not path.exists():
+            missing.append(path)
+    if missing:
+        joined = ", ".join(str(p) for p in missing)
+        raise FileNotFoundError(
+            "Missing translate prompt file(s): %s. "
+            "Author the missing prompt(s) or remove the locale from "
+            "compose.languages / --languages." % joined
+        )
 
 
 def ensure_directories() -> None:

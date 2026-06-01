@@ -22,6 +22,7 @@ from typing import Any
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
@@ -34,10 +35,10 @@ from core.utils import (
     today_label,
     week_range_label,
 )
-from core.html_composer import HtmlComposer
-
+from core.html_composer import HtmlComposer, compose_multilang
 
 # ── step function | 步骤函数 ─────────────────────────────────────────────────
+
 
 def run(
     config: AppConfig,
@@ -46,10 +47,18 @@ def run(
     date_label: str,
     logger: logging.Logger,
     meta: dict[str, Any] | None = None,
+    languages: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Compose newsletter HTML and write output files.
     组合新闻简报HTML并写入输出文件。
+
+    ``languages`` selects the translated locale sections appended to the EN
+    body. ``None`` (default) → resolve from ``config.compose_languages`` /
+    legacy ``config.compose_bilingual`` (back-compat). ``[]`` → pure EN
+    render with no Translator call (used by the Executor architecture path
+    where translation happens in parallel ``TranslateLocale`` executors).
+    Explicit non-empty list → render exactly those locales inline.
 
     Returns dict:
         html_body:    str   — the composed HTML string
@@ -60,15 +69,16 @@ def run(
     print("  STEP 4 / 5 : COMPOSE NEWSLETTER HTML")
     print("=" * 60)
 
-    composer = HtmlComposer(config)
-    html_body = composer.compose(
+    html_body = compose_multilang(
+        config,
         stories,
         scanned_articles,
         week_range_label(window_days=config.fetch_window_days),
         logger=logger,
         meta=meta or {},
+        languages=languages,
     )
-    composer.write_outputs(date_label, html_body, logger)
+    HtmlComposer(config).write_outputs(date_label, html_body, logger)
 
     return {
         "html_body": html_body,
@@ -77,6 +87,7 @@ def run(
 
 
 # ── standalone entry | 独立入口 ──────────────────────────────────────────────
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Step 4: Compose newsletter HTML")
@@ -94,11 +105,19 @@ def main() -> int:
         print("\n❌ Cannot compose: %s" % fetch_result["abort_message"])
         return 2
 
-    enrich_result = enrich(ctx["config"], fetch_result["articles"], ctx["date_label"], ctx["logger"])
-    curate_result = curate(ctx["config"], enrich_result["articles"], ctx["date_label"], ctx["logger"])
+    enrich_result = enrich(
+        ctx["config"], fetch_result["articles"], ctx["date_label"], ctx["logger"]
+    )
+    curate_result = curate(
+        ctx["config"], enrich_result["articles"], ctx["date_label"], ctx["logger"]
+    )
     result = run(
-        ctx["config"], curate_result["stories"], fetch_result["articles"],
-        ctx["date_label"], ctx["logger"], meta=curate_result.get("meta"),
+        ctx["config"],
+        curate_result["stories"],
+        fetch_result["articles"],
+        ctx["date_label"],
+        ctx["logger"],
+        meta=curate_result.get("meta"),
     )
     print("\n✅ HTML composed: %s" % result["output_path"])
     return 0

@@ -1,4 +1,4 @@
-"""Translator — translates curated EN newsletter stories into Simplified Chinese."""
+"""Translator — translates curated EN newsletter stories into a target locale."""
 
 from __future__ import annotations
 
@@ -6,31 +6,91 @@ import datetime
 import json
 import logging
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from core.llm_client import LlmClient
 from core.paths import translate_prompt_path
 
-_LENGTH_BAND_MIN = 0.25
-_LENGTH_BAND_MAX = 1.2
-_MIN_CJK_RATIO = 0.3
-_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+_CJK_RE = re.compile(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]")
+
+
+@dataclass(frozen=True)
+class LocaleConfig:
+    """Per-locale validation + formatting parameters for the Translator.
+    每种语言的校验/格式化参数。
+
+    `code`              — short locale code matching `prompts/translate-{code}-{ver}.md`
+    `script_pattern`    — compiled regex matching the target-script characters
+    `min_script_ratio`  — minimum (script-chars / normalized-len) ratio; 0.0 skips check
+    `length_band`       — (min, max) ratio of len(translated) / len(source)
+    `date_format`       — strftime-style format for date_zh field; empty → skip
+    """
+
+    code: str
+    script_pattern: re.Pattern[str]
+    min_script_ratio: float
+    length_band: tuple[float, float]
+    date_format: str
+
+    @staticmethod
+    def zh() -> "LocaleConfig":
+        return LocaleConfig(
+            code="zh",
+            script_pattern=re.compile(r"[\u4e00-\u9fff]"),
+            min_script_ratio=0.3,
+            length_band=(0.25, 1.2),
+            date_format="%Y年%m月%d日",
+        )
+
+    @staticmethod
+    def ja() -> "LocaleConfig":
+        return LocaleConfig(
+            code="ja",
+            script_pattern=re.compile(r"[\u4e00-\u9fff\u3040-\u309F\u30A0-\u30FF]"),
+            min_script_ratio=0.3,
+            length_band=(0.25, 1.2),
+            date_format="%Y年%m月%d日",
+        )
+
+    @staticmethod
+    def ko() -> "LocaleConfig":
+        return LocaleConfig(
+            code="ko",
+            script_pattern=re.compile(r"[\uAC00-\uD7AF]"),
+            min_script_ratio=0.3,
+            length_band=(0.40, 1.4),
+            date_format="%Y년%m월%d일",
+        )
+
+    @staticmethod
+    def vi() -> "LocaleConfig":
+        return LocaleConfig(
+            code="vi",
+            script_pattern=re.compile(r"[A-Za-zÀ-ỹ]"),
+            min_script_ratio=0.0,
+            length_band=(0.80, 1.6),
+            date_format="%d/%m/%Y",
+        )
 
 
 class TranslationFailed(RuntimeError):
-    """Raised when the LLM translation cannot be trusted (parse / length / CJK / id / mutation)."""
+    """Raised when the LLM translation cannot be trusted (parse / length / script / id / mutation)."""
 
 
 class Translator:
-    """Translates curated newsletter stories from English to Simplified Chinese.
+    """Translates curated newsletter stories from English to a target locale.
 
     Wire-up:
-      result = Translator(llm_client, prompt_version, logger).translate_stories(stories)
+      result = Translator(llm_client, prompt_version, logger, locale=LocaleConfig.zh()).translate_stories(stories)
 
     `result` is a deep-copied list of stories with `title`/`summary` replaced by the
-    Chinese translation and a new `date_zh` field added. The original `tag`, `url`,
-    `source`, `image`, and `id` fields are preserved verbatim — the LLM is not
-    permitted to mutate them.
+    translated text and a `date_zh` field added (locale-formatted regardless of code).
+    The original `tag`, `url`, `source`, `image`, and `id` fields are preserved
+    verbatim — the LLM is not permitted to mutate them.
+
+    The `date_zh` field name is kept for backward compatibility with the HTML
+    composer / templates; the formatted value follows the locale's `date_format`.
     """
 
     def __init__(
@@ -38,10 +98,12 @@ class Translator:
         llm_client: LlmClient,
         prompt_version: str,
         logger: logging.Logger,
+        locale: LocaleConfig | None = None,
     ) -> None:
         self._llm = llm_client
         self._prompt_version = prompt_version
         self._logger = logger
+        self._locale = locale if locale is not None else LocaleConfig.zh()
 
     def translate_stories(self, stories: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not stories:
@@ -52,17 +114,17 @@ class Translator:
 
         self._validate_tags_unchanged(stories, merged)
         self._validate_lengths(stories, merged)
-        self._validate_cjk(merged)
+        self._validate_script(merged)
 
         for translated, original in zip(merged, stories):
-            translated["date_zh"] = self._format_date_zh(
+            translated["date_zh"] = self._format_date_localized(
                 original.get("published_at_iso") or original.get("published_date")
             )
 
         return merged
 
     def _call_llm(self, stories: list[dict[str, Any]]) -> dict[str, Any]:
-        prompt_path = translate_prompt_path(self._prompt_version)
+        prompt_path = translate_prompt_path(self._locale.code, self._prompt_version)
         template = prompt_path.read_text(encoding="utf-8")
         stories_for_llm = [
             {
@@ -115,20 +177,24 @@ class Translator:
             by_id[entry_id] = entry
 
         merged: list[dict[str, Any]] = []
+        title_key = "title_%s" % self._locale.code
+        summary_key = "summary_%s" % self._locale.code
         for idx, original in enumerate(original_stories):
             sid = self._story_id(original, idx)
             if sid not in by_id:
                 raise TranslationFailed("missing_translation id=%r" % sid)
             cn = by_id[sid]
-            title_zh = cn.get("title_zh")
-            summary_zh = cn.get("summary_zh")
-            if not isinstance(title_zh, str) or not isinstance(summary_zh, str):
+            title_translated = cn.get(title_key)
+            summary_translated = cn.get(summary_key)
+            if not isinstance(title_translated, str) or not isinstance(
+                summary_translated, str
+            ):
                 raise TranslationFailed(
-                    "missing_translation id=%r (title_zh/summary_zh)" % sid
+                    "missing_translation id=%r (%s/%s)" % (sid, title_key, summary_key)
                 )
             out = dict(original)
-            out["title"] = self._repair_utf8_mojibake(title_zh)
-            out["summary"] = self._repair_utf8_mojibake(summary_zh)
+            out["title"] = self._repair_utf8_mojibake(title_translated)
+            out["summary"] = self._repair_utf8_mojibake(summary_translated)
             merged.append(out)
         return merged
 
@@ -137,25 +203,28 @@ class Translator:
         originals: list[dict[str, Any]],
         merged: list[dict[str, Any]],
     ) -> None:
+        band_min, band_max = self._locale.length_band
         for original, translated in zip(originals, merged):
             en_text = self._combined_text(original)
             cn_text = self._combined_text(translated)
             en_len = max(len(en_text), 1)
             ratio = len(cn_text) / en_len
-            if ratio < _LENGTH_BAND_MIN or ratio > _LENGTH_BAND_MAX:
+            if ratio < band_min or ratio > band_max:
                 raise TranslationFailed(
                     "length_band violation id=%r ratio=%.3f (allowed %.2f-%.2f)"
-                    % (original.get("id"), ratio, _LENGTH_BAND_MIN, _LENGTH_BAND_MAX)
+                    % (original.get("id"), ratio, band_min, band_max)
                 )
 
-    def _validate_cjk(self, merged: list[dict[str, Any]]) -> None:
+    def _validate_script(self, merged: list[dict[str, Any]]) -> None:
+        if self._locale.min_script_ratio <= 0.0:
+            return
         for translated in merged:
             cn_text = self._combined_text(translated)
-            ratio = self._cjk_char_ratio(cn_text)
-            if ratio < _MIN_CJK_RATIO:
+            ratio = self._script_char_ratio(cn_text, self._locale.script_pattern)
+            if ratio < self._locale.min_script_ratio:
                 raise TranslationFailed(
                     "cjk_ratio too low id=%r ratio=%.3f (minimum %.2f)"
-                    % (translated.get("id"), ratio, _MIN_CJK_RATIO)
+                    % (translated.get("id"), ratio, self._locale.min_script_ratio)
                 )
 
     @staticmethod
@@ -201,16 +270,18 @@ class Translator:
         return "%s %s" % (title, summary)
 
     @staticmethod
-    def _cjk_char_ratio(text: str) -> float:
+    def _script_char_ratio(text: str, pattern: re.Pattern[str]) -> float:
         normalized = re.sub(r"[A-Za-z0-9_./:+#-]+", "", text or "")
         normalized = re.sub(r"\s+", "", normalized)
         if not normalized:
             return 0.0
-        cjk = len(_CJK_RE.findall(normalized))
-        return cjk / len(normalized)
+        hits = len(pattern.findall(normalized))
+        return hits / len(normalized)
 
-    @staticmethod
-    def _format_date_zh(iso_str: Any) -> str:
+    def _format_date_localized(self, iso_str: Any) -> str:
+        fmt = self._locale.date_format
+        if not fmt:
+            return ""
         if not isinstance(iso_str, str) or not iso_str.strip():
             return ""
         try:
@@ -218,6 +289,6 @@ class Translator:
             if value.endswith("Z"):
                 value = value[:-1] + "+00:00"
             dt = datetime.datetime.fromisoformat(value)
-            return dt.strftime("%Y年%m月%d日")
+            return dt.strftime(fmt)
         except (ValueError, TypeError):
             return ""

@@ -30,6 +30,7 @@ from core.paths import (
     curate_prompt_path,
     template_path,
     translate_prompt_path,
+    validate_languages_have_prompts,
 )
 from core.utils import log_event, mask_recipients
 
@@ -53,8 +54,10 @@ class ConfigLoader:
         tmpl_file = template_path(config.template_version)
         if not tmpl_file.exists():
             raise FileNotFoundError("Missing template file: %s" % tmpl_file)
-        if config.compose_bilingual:
-            translate_file = translate_prompt_path(config.translate_prompt_version)
+        for lang in config.compose_languages:
+            translate_file = translate_prompt_path(
+                lang, config.translate_prompt_version
+            )
             if not translate_file.exists():
                 raise FileNotFoundError(
                     "Missing translate prompt file: %s" % translate_file
@@ -334,10 +337,44 @@ class ConfigLoader:
         # 双语合成选项（默认开启；缺失整段时回落到默认）
         compose_bilingual_raw = compose_section.get("bilingual", True)
         compose_bilingual = bool(compose_bilingual_raw)
+        bilingual_explicit = "bilingual" in compose_section
         translate_prompt_version = (
             str(compose_section.get("translate_prompt_version") or "").strip() or "v1"
         )
-        translate_prompt_path(translate_prompt_version)
+
+        languages_raw = compose_section.get("languages")
+        if languages_raw is not None and not isinstance(languages_raw, list):
+            raise ValueError("compose.languages must be a list of locale codes")
+
+        compose_languages: list[str] = []
+        if isinstance(languages_raw, list):
+            seen: set[str] = set()
+            for item in languages_raw:
+                lang = str(item).strip().lower()
+                if lang and lang not in seen:
+                    seen.add(lang)
+                    compose_languages.append(lang)
+
+        if compose_languages:
+            if bilingual_explicit and not compose_bilingual:
+                _config_logger = logging.getLogger("ai-newsletter-config")
+                log_event(
+                    _config_logger,
+                    logging.WARNING,
+                    "compose_config_conflict",
+                    reason="compose.languages non-empty but compose.bilingual=false",
+                    resolution="compose.languages wins",
+                    languages=compose_languages,
+                )
+            compose_bilingual = "zh" in compose_languages
+        elif compose_bilingual:
+            compose_languages = ["zh"]
+        else:
+            compose_languages = []
+
+        for lang in compose_languages:
+            translate_prompt_path(lang, translate_prompt_version)
+        validate_languages_have_prompts(compose_languages, translate_prompt_version)
 
         return AppConfig(
             issue_number=issue_number,
@@ -374,5 +411,6 @@ class ConfigLoader:
             template_version=template_version,
             curate_prompt_version=curate_prompt_version,
             compose_bilingual=compose_bilingual,
+            compose_languages=compose_languages,
             translate_prompt_version=translate_prompt_version,
         )
