@@ -486,7 +486,7 @@ class LocaleAssembler(Executor):
         # Wrap into the list shape that the real assembler expects.
         # 单语言路径用普通 add_edge（fan-in 需要 >= 2 个来源），
         # 这里把单条消息包成 list，让真正的合并逻辑统一处理。
-        await self.handle(payloads=[payload], ctx=ctx)
+        await self.handle([payload], ctx)
 
     @handler
     async def handle(
