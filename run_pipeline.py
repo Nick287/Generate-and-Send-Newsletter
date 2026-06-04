@@ -36,6 +36,7 @@ from typing import Any, Optional
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
@@ -47,6 +48,7 @@ from core.utils import (
 )
 from core.models import AppConfig
 from core.html_composer import HtmlComposer
+from core.paths import validate_languages_have_prompts
 
 from steps.step0_config import run as step0_load_config
 from steps.step1_fetch import run as step1_fetch
@@ -55,8 +57,8 @@ from steps.step3_curate import run as step3_curate
 from steps.step4_compose import run as step4_compose
 from steps.step5_send import run as step5_send
 
-
 # ── Summary helpers | 摘要辅助函数 ────────────────────────────────────
+
 
 def success_summary_message(
     article_count: int,
@@ -84,6 +86,7 @@ def resolve_recipients(cli_to: Optional[str], config: AppConfig) -> list[str]:
 
 # ── Full pipeline (calls each step sequentially) | 完整流水线 ────────
 
+
 def full_pipeline(args: argparse.Namespace) -> int:
     """Execute the 5-step newsletter pipeline: fetch → enrich → curate → compose → send.
     执行5步新闻简报流水线：抓取 → 充实 → 筛选 → 组合 → 发送。
@@ -92,6 +95,13 @@ def full_pipeline(args: argparse.Namespace) -> int:
     # ── Step 0: Config ───────────────────────────────────────────────────────
     ctx = step0_load_config()
     config = ctx["config"]
+    if getattr(args, "bilingual", True) is False:
+        config.compose_bilingual = False
+    if getattr(args, "languages", None) is not None:
+        config.compose_languages = list(args.languages)
+        validate_languages_have_prompts(
+            config.compose_languages, config.translate_prompt_version
+        )
     feeds = ctx["feeds"]
     date_label = ctx["date_label"]
     logger = ctx["logger"]
@@ -117,7 +127,9 @@ def full_pipeline(args: argparse.Namespace) -> int:
     llm_failed = curate_out["llm_failed"]
 
     # ── Step 4: Compose ──────────────────────────────────────────────────────
-    compose_out = step4_compose(config, stories, articles, date_label, logger, meta=curate_out.get("meta"))
+    compose_out = step4_compose(
+        config, stories, articles, date_label, logger, meta=curate_out.get("meta")
+    )
     html_body = compose_out["html_body"]
 
     if args.fetch_only:
@@ -169,6 +181,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dry-run", action="store_true", help="Run the full pipeline but skip send"
     )
+    parser.add_argument(
+        "--no-bilingual",
+        action="store_false",
+        dest="bilingual",
+        default=True,
+        help="Disable the appended Simplified Chinese newsletter section",
+    )
+    parser.add_argument(
+        "--languages",
+        nargs="*",
+        default=None,
+        metavar="LOCALE",
+        help=(
+            "Override config.compose_languages. Example: --languages zh ko ja vi. "
+            "Pass --languages with no values to force EN-only. "
+            "Omit the flag entirely to use config.yaml. (覆盖 config.compose_languages)"
+        ),
+    )
     parser.add_argument("--to", help="Override recipient email(s), comma-separated")
     return parser.parse_args()
 
@@ -180,6 +210,7 @@ def main() -> int:
     args = parse_args()
 
     from core.utils import today_label
+
     print("=" * 60)
     print("  AI Weekly Digest — Pipeline Start")
     print("  Date: %s" % today_label())
@@ -189,6 +220,14 @@ def main() -> int:
     try:
         if args.compose_only:
             ctx = step0_load_config()
+            if getattr(args, "bilingual", True) is False:
+                ctx["config"].compose_bilingual = False
+            if getattr(args, "languages", None) is not None:
+                ctx["config"].compose_languages = list(args.languages)
+                validate_languages_have_prompts(
+                    ctx["config"].compose_languages,
+                    ctx["config"].translate_prompt_version,
+                )
             composer = HtmlComposer(ctx["config"])
             return composer.compose_only(ctx["logger"])
 

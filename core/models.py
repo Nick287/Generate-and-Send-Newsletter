@@ -5,7 +5,7 @@ Data models (dataclasses) for the newsletter pipeline.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -14,6 +14,7 @@ class FeedSource:
     """Represents a single RSS/Atom feed source.
     表示一个RSS/Atom订阅源。
     """
+
     category: str
     name: str
     url: str
@@ -26,6 +27,7 @@ class AppConfig:
     """Application configuration loaded from config.yaml.
     从 config.yaml 加载的应用配置。
     """
+
     issue_number: int
     recipients: list[str]
     acs_sender: str
@@ -59,6 +61,9 @@ class AppConfig:
     from_alias: str = ""
     template_version: str = "v7"
     curate_prompt_version: str = "v5"
+    compose_bilingual: bool = True
+    compose_languages: list[str] = field(default_factory=list)
+    translate_prompt_version: str = "v1"
 
 
 @dataclass
@@ -66,6 +71,7 @@ class Article:
     """Represents a single news article throughout the pipeline.
     表示流水线中的一篇新闻文章。
     """
+
     title: str
     link: str
     source_name: str
@@ -76,6 +82,7 @@ class Article:
     og_image: Optional[str] = None
     image_url: Optional[str] = None
     pre_score: Optional[float] = None
+    skip_enrich: bool = False
 
 
 @dataclass
@@ -83,6 +90,7 @@ class FetchResult:
     """Result of the feed-fetching stage.
     RSS抓取阶段的结果。
     """
+
     articles: list[Article]
     failed_feeds: list[str]
     total_feeds: int
@@ -94,6 +102,7 @@ class StageOutcome:
     """Generic outcome descriptor for any pipeline stage.
     流水线任意阶段的通用结果描述。
     """
+
     critical_failure: bool = False
     partial_failure: bool = False
     message: str = ""

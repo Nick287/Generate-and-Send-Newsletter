@@ -14,6 +14,22 @@ llm:
   max_tokens: 8000
   timeout: 180
 
+# ---- Compose stage -----------------------------------------------------------
+compose:
+  bilingual: true                    # Legacy switch — kept for back-compat.
+                                     # When `languages` below is set, it wins;
+                                     # `bilingual: true` alone means [zh].
+  translate_prompt_version: "v1"
+
+  # Multi-locale translation (issue #28 fan-out / fan-in).
+  # Each locale produces a sibling HTML section appended after the English
+  # newsletter. Per-locale failures are isolated (EN always ships).
+  # Supported locales: zh, ja, ko, vi  (each must have a matching
+  # prompts/translate-{locale}-{version}.md file).
+  # Omit or leave empty to fall back to `bilingual`.
+  # CLI override: `--languages zh ko` (space-separated, or empty to force EN-only).
+  languages: ["zh"]
+
 # ---- Email -------------------------------------------------------------------
 email:
   provider: "acs"                  # one of: acs | sendgrid | smtp
@@ -55,10 +71,10 @@ cleanup:
   retention_days: 30
 
 # ---- Template / prompt versioning (optional) ---------------------------------
-# Defaults preserve current behavior (template v7 + curate prompt v5).
+# Defaults use the latest newsletter layout (template v8 + curate prompt v8).
 # Override here, or via env vars NEWSLETTER_TEMPLATE_VERSION / CURATE_PROMPT_VERSION.
 # Versions must match pattern "v<digits>" (e.g. v5, v7); other values are rejected.
 # template:
-#   version: "v7"
+#   version: "v8"
 # llm:
-#   curate_prompt_version: "v5"
+#   curate_prompt_version: "v8"

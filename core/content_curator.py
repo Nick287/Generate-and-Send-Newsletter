@@ -87,11 +87,19 @@ class ContentCurator:
                 }
             )
 
-        user_prompt = (
-            "Curate these articles into the required flat JSON array of story objects. "
-            "Use the exact schema from the system prompt. Do not wrap in markdown.\n\n"
-            "Articles:\n%s" % json.dumps(payload, ensure_ascii=False)
-        )
+        if getattr(self.config, "curate_prompt_version", None) == "v8":
+            user_prompt = (
+                "Curate these articles into the required JSON object with headline, "
+                "tldr, hero_image_index, and stories. Use the exact schema from the "
+                "system prompt. Do not wrap in markdown.\n\n"
+                "Articles:\n%s" % json.dumps(payload, ensure_ascii=False)
+            )
+        else:
+            user_prompt = (
+                "Curate these articles into the required flat JSON array of story objects. "
+                "Use the exact schema from the system prompt. Do not wrap in markdown.\n\n"
+                "Articles:\n%s" % json.dumps(payload, ensure_ascii=False)
+            )
 
         critical_failure = False
         meta: dict[str, Any] = {}

@@ -17,16 +17,16 @@ from core.paths import (
 
 
 class VersionHelpersTests(unittest.TestCase):
-    def test_defaults_are_v7_and_v5(self) -> None:
-        self.assertEqual(DEFAULT_TEMPLATE_VERSION, "v7")
-        self.assertEqual(DEFAULT_CURATE_PROMPT_VERSION, "v5")
+    def test_defaults_are_v8_and_v8(self) -> None:
+        self.assertEqual(DEFAULT_TEMPLATE_VERSION, "v8")
+        self.assertEqual(DEFAULT_CURATE_PROMPT_VERSION, "v8")
 
-    def test_default_template_path_resolves_to_v7(self) -> None:
-        self.assertEqual(template_path(), TEMPLATES_DIR / "v7.html")
+    def test_default_template_path_resolves_to_v8(self) -> None:
+        self.assertEqual(template_path(), TEMPLATES_DIR / "v8.html")
         self.assertEqual(template_path("v7"), TEMPLATES_DIR / "v7.html")
 
-    def test_default_curate_prompt_path_resolves_to_v5(self) -> None:
-        self.assertEqual(curate_prompt_path(), PROMPTS_DIR / "curate-v5.md")
+    def test_default_curate_prompt_path_resolves_to_v8(self) -> None:
+        self.assertEqual(curate_prompt_path(), PROMPTS_DIR / "curate-v8.md")
         self.assertEqual(curate_prompt_path("v5"), PROMPTS_DIR / "curate-v5.md")
 
     def test_template_helper_accepts_arbitrary_numeric_version(self) -> None:
