@@ -7,7 +7,7 @@ pyyaml==6.0.3
 lxml==6.1.0
 python-dotenv>=1.2.2
 pydantic>=2.13.3
-agent-framework>=1.2.1
+agent-framework>=1.8.0
 
 # Observability (optional — only needed for DevUI tracing)
 # opentelemetry-exporter-otlp-proto-grpc
